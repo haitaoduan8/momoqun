@@ -4,6 +4,13 @@
 from multiprocessing import freeze_support
 import os
 import sys
+
+# --- console=False 兼容：重定向 stdout/stderr，避免 uvicorn logging 崩溃 ---
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 import threading
 import time
 import webbrowser
