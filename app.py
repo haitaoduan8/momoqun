@@ -20,10 +20,12 @@ import webbrowser
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)  # 把 CWD 切到打包目录，保证 config/ data/ 等相对路径可用
-    # 告诉 adbutils 去哪里找内置的 adb.exe
-    os.environ["ADBUTILS_ADB_PATH"] = os.path.join(
-        BASE_DIR, "_internal", "adbutils", "binaries", "adb.exe"
-    )
+    # 把内置 adb.exe 目录加入 PATH，让 adbutils 的 which("adb") / ADBUTILS_ADB_PATH 都能找到
+    _adb_dir = os.path.join(BASE_DIR, "_internal", "adbutils", "binaries")
+    _adb_exe = os.path.join(_adb_dir, "adb.exe")
+    if os.path.isfile(_adb_exe):
+        os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
+        os.environ["PATH"] = _adb_dir + os.pathsep + os.environ.get("PATH", "")
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
