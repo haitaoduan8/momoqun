@@ -12,6 +12,7 @@ import webbrowser
 # --- PyInstaller 路径兼容 ---
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
+    os.chdir(BASE_DIR)  # 把 CWD 切到打包目录，保证 config/ data/ 等相对路径可用
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
