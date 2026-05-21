@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设备管理 - momoqun</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
+.nav{display:flex;gap:0;border-bottom:1px solid #1e2230;background:#161923}
+.nav a{padding:12px 20px;color:#888;text-decoration:none;font-size:14px;transition:color .2s}
+.nav a:hover,.nav a.active{color:#e0e0e0}
+.nav a.active{border-bottom:2px solid #6366f1}
+.container{max-width:900px;margin:0 auto;padding:16px}
+h2{font-size:16px;margin:16px 0 10px;color:#a0a0c0}
+.card{border:1px solid #1e2230;border-radius:10px;padding:16px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center}
+.row input{flex:1}
+input,select{width:100%;padding:10px 12px;border:1px solid #2a2d3a;border-radius:6px;background:#161923;color:#e0e0e0;font-size:14px;font-family:inherit}
+input:focus{outline:none;border-color:#6366f1}
+.btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-primary{background:#6366f1;color:#fff}
+.btn-success{background:#10b981;color:#fff}
+.btn-danger{background:#ef4444;color:#fff}
+.btn-warning{background:#f59e0b;color:#111}
+.btn-secondary{background:#1e2230;color:#a0a0c0;border:1px solid #2a2d3a}
+.btn-sm{padding:4px 10px;font-size:11px}
+.device-row{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #1e2230;gap:10px;font-size:13px}
+.device-row:last-child{border-bottom:none}
+.device-name{min-width:100px;font-weight:500}
+.device-serial{font-size:11px;color:#666;min-width:110px}
+.device-state{min-width:60px;font-weight:600}
+.state-running{color:#10b981}
+.state-stopped{color:#666}
+.state-error{color:#ef4444}
+.device-info{flex:1;font-size:11px;color:#999}
+.device-actions{display:flex;gap:4px;flex-shrink:0}
+.status{font-size:12px;margin-top:8px;padding:6px 10px;border-radius:6px;display:inline-block}
+.status-ok{background:#064e3e;color:#6ee7b7}
+.status-err{background:#7f1d1d;color:#fca5a5}
+.help{font-size:12px;color:#555;line-height:1.6}
+.code{background:#1e2230;color:#10b981;padding:2px 6px;border-radius:4px;font-size:12px}
+.hint{font-size:11px;color:#555;margin-top:4px}
+</style>
+</head>
+<body>
+
+<!-- 导航 -->
+<nav class="nav">
+  <a href="/">📊 仪表盘</a>
+  <a href="/config-page">⚙ 配置</a>
+  <a href="/devices" class="active">📱 设备</a>
+</nav>
+
+<div class="container">
+  <h2>① 连接设备</h2>
+  <div class="card">
+    <div class="row">
+      <input id="connect_addr" placeholder="IP:端口 或 serial，例如 127.0.0.1:5555" value="127.0.0.1:5555">
+      <button class="btn btn-primary" onclick="adbConnect()">🔗 连接</button>
+    </div>
+    <div class="hint">模拟器一般用 <span class="code">adb connect 127.0.0.1:5555</span>，USB 真机会自动识别</div>
+    <div id="connect_status"></div>
+  </div>
+
+  <div class="row" style="margin:12px 0;gap:8px">
+    <button class="btn btn-secondary btn-sm" onclick="refreshADB()">🔄 刷新设备列表</button>
+    <span style="font-size:12px;color:#666" id="adb_count"></span>
+  </div>
+
+  <h2>② 已发现设备</h2>
+  <div class="card" id="adb_list">加载中...</div>
+
+  <h2>③ 已添加设备（可启动）</h2>
+  <div class="card" id="local_list">
+    <div style="color:#666;text-align:center;padding:20px">暂无设备，从上面的列表中点「⚙初始化」→「➕添加」</div>
+  </div>
+
+  <div class="help" style="margin-top:20px;padding:12px;border:1px solid #1e2230;border-radius:8px">
+    <strong>💡 新手上手流程：</strong><br>
+    ① 模拟器中打开陌陌，停在「消息」Tab<br>
+    ② 在上面输入模拟器地址，点 <span class="code">连接</span><br>
+    ③ 设备列表出现后，点 <span class="code">⚙初始化</span>（首次必须）<br>
+    ④ 点 <span class="code">➕添加</span> 加入设备管理器<br>
+    ⑤ 点 <span class="code">▶启动</span> 开始自动化
+  </div>
+</div>
+
+<script>
+const API = '';
+
+async function refreshADB() {
+  try {
+    const r = await fetch(`${API}/api/adb/devices`);
+    const data = await r.json();
+    const devs = data.devices || [];
+    document.getElementById('adb_count').textContent = `共 ${devs.length} 台设备`;
+
+    let html = '';
+    if (devs.length === 0) {
+      html = '<div style="color:#666;text-align:center;padding:20px">没有发现设备。请确认模拟器已启动，然后点「连接」</div>';
+    } else {
+      for (const d of devs) {
+        html += `<div class="device-row">
+          <div class="device-name">${d.serial}</div>
+          <div class="device-serial">${d.info || ''}</div>
+          <div class="device-actions">
+            <button class="btn btn-warning btn-sm" onclick="initDevice('${d.serial}')">⚙初始化</button>
+            <button class="btn btn-success btn-sm" onclick="addDevice('${d.serial}')">➕添加</button>
+            <button class="btn btn-danger btn-sm" onclick="disconnectDevice('${d.serial}')">断开</button>
+          </div>
+        </div>`;
+      }
+    }
+    document.getElementById('adb_list').innerHTML = html;
+  } catch (e) {
+    document.getElementById('adb_list').innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function adbConnect() {
+  const addr = document.getElementById('connect_addr').value.trim();
+  if (!addr) return;
+  showStatus('connect_status', '连接中...', false);
+  try {
+    const r = await fetch(`${API}/api/adb/connect`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({address: addr})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showStatus('connect_status', '✅ ' + d.output, true);
+      setTimeout(refreshADB, 800);
+    } else {
+      showStatus('connect_status', '❌ ' + (d.error || d.output), false);
+    }
+  } catch (e) { showStatus('connect_status', '❌ ' + e.message, false); }
+}
+
+async function disconnectDevice(serial) {
+  await fetch(`${API}/api/adb/disconnect`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({address: serial})
+  });
+  refreshADB();
+}
+
+async function initDevice(serial) {
+  showStatus('connect_status', `正在初始化 ${serial}...`, false);
+  try {
+    const r = await fetch(`${API}/api/adb/init`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({serial})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showStatus('connect_status', `✅ ${serial} 初始化成功！可以添加了`, true);
+    } else {
+      showStatus('connect_status', `❌ ${serial} 初始化失败: ${d.error || d.output}`, false);
+    }
+  } catch (e) { showStatus('connect_status', '❌ ' + e.message, false); }
+}
+
+async function addDevice(serial) {
+  const name = serial; // 默认名字就是 serial
+  try {
+    const r = await fetch(`${API}/api/local/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({serial, name})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showStatus('connect_status', `✅ ${serial} 已添加`, true);
+      refreshLocal();
+    } else {
+      showStatus('connect_status', '❌ ' + (d.error || '添加失败'), false);
+    }
+  } catch (e) { showStatus('connect_status', '❌ ' + e.message, false); }
+}
+
+async function refreshLocal() {
+  try {
+    const r = await fetch(`${API}/api/local/devices`);
+    const devs = await r.json();
+    let html = '';
+    if (devs.length === 0) {
+      html = '<div style="color:#666;text-align:center;padding:20px">暂无设备</div>';
+    } else {
+      for (const d of devs) {
+        const sc = d.state === 'running' ? 'state-running' : d.state === 'error' ? 'state-error' : 'state-stopped';
+        const label = d.state === 'running' ? '🟢' : d.state === 'error' ? '🔴' : '⚫';
+        const info = [];
+        if (d.friend && d.friend !== '-') info.push(d.friend);
+        if (d.round && d.round !== '-') info.push(d.round);
+        if (d.pipeline) info.push(d.pipeline);
+        if (d.error) info.push('⚠' + d.error);
+        html += `<div class="device-row">
+          <div class="device-name">${d.name}</div>
+          <div class="device-serial">${d.serial}</div>
+          <div class="device-state ${sc}">${label} ${d.state}</div>
+          <div class="device-info">${info.join(' | ') || '-'}</div>
+          <div class="device-actions">
+            <button class="btn btn-success btn-sm" onclick="ctrl('start','${d.serial}')">▶</button>
+            <button class="btn btn-danger btn-sm" onclick="ctrl('stop','${d.serial}')">⏹</button>
+            <button class="btn btn-warning btn-sm" onclick="ctrl('pause','${d.serial}')">⏸</button>
+            <button class="btn btn-primary btn-sm" onclick="ctrl('resume','${d.serial}')">▶</button>
+          </div>
+        </div>`;
+      }
+    }
+    document.getElementById('local_list').innerHTML = html;
+  } catch (e) {
+    document.getElementById('local_list').innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function ctrl(action, serial) {
+  const r = await fetch(`${API}/api/local/${action}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({serial})
+  });
+  setTimeout(refreshLocal, 500);
+}
+
+function showStatus(id, msg, ok) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status ' + (ok ? 'status-ok' : 'status-err');
+  if (ok) setTimeout(() => { el.textContent = ''; el.className = 'status'; }, 5000);
+}
+
+// 定时刷新
+refreshADB();
+refreshLocal();
+setInterval(() => { refreshADB(); refreshLocal(); }, 3000);
+</script>
+</body>
+</html>

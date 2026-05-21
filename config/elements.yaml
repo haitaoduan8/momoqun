@@ -1,0 +1,126 @@
+entry_elements:
+  sayhi_entry:
+    text: "收到的招呼"
+  red_dot:
+    resourceId: "com.immomo.momo:id/chatlist_item_tv_status_new"
+
+# 聊天列表。以下为 OnePlus+当前渠道包在「消息」Tab 下 uiautomator dump 对齐的 id
+#（历史占位符 chat_list_item 在现版已改为 chatlist_item_* 命名，无独立 uid 子节点。）
+# 调度器只关心 chat_row/chat_row_name/chat_row_uid/chat_unread_badge 四个键的 resourceId。
+chat_list:
+  # 进入聊天列表页的文案入口（如底部 tab "消息"）
+  chat_entry:
+    text: "消息"
+  # 每一行顶栏容器（每会话一条，供枚举 bounds；勿用不存在的 chat_list_item）
+  chat_row:
+    resourceId: "com.immomo.momo:id/chatlist_item_layout_top_part"
+  # 行内昵称 TextView（无 uid 节点时用昵称作 Candidate.uid 兜底）
+  chat_row_name:
+    resourceId: "com.immomo.momo:id/chatlist_item_tv_name"
+  # 行内用户 id。当前版本 hierarchy 无此节点，留空则仅用昵称/匿名 id
+  chat_row_uid:
+    resourceId: ""
+  # 新消息/未回数字角标：存在子节点则视为有未处理消息
+  chat_unread_badge:
+    resourceId: "com.immomo.momo:id/chatlist_item_tv_status_new"
+  # 可选：消息列表 RecyclerView，供 full_list 下滚时 scroll；未配则用屏幕中部长滑
+  list_scroller:
+    resourceId: ""
+
+# 聊天列表消息状态图标：头像右侧/消息摘要左侧，绿色对勾=已读，黄色箭头=未读。
+chat_message_read_status:
+  row:
+    resourceId: "com.immomo.momo:id/item_layout"
+  name:
+    resourceId: "com.immomo.momo:id/chatlist_item_tv_name"
+  status_icon:
+    resourceId: "com.immomo.momo:id/chatlist_item_iv_status"
+
+# 礼物入口：通过 resourceId 定位（聊天栏礼物/位置按钮）
+gift_panel:
+  gift_entry:
+    mode: id
+    # 父容器热区 175x47 > icon 子节点 72x38，带随机偏移也不会越界
+    resourceId: "com.immomo.momo:id/message_btn_gift_or_loc"
+  # 礼物弹窗内列表：当前页的 RecyclerView（垂直），位于 ViewPager 里
+  gift_list:
+    resourceId: "com.immomo.momo:id/gift_panel_list"
+  # 礼物面板的横向分页容器（ViewPager），不同页礼物不同；翻页靠它
+  gift_pager:
+    resourceId: "com.immomo.momo:id/viewpager"
+  # 面板里每个礼物名 TextView 的 id，用于提取行列中心坐标
+  gift_item_name:
+    resourceId: "com.immomo.momo:id/tv_gift_name"
+
+buttons:
+  accept_button:
+    resourceId: "com.immomo.momo:id/icon_sayhi_confirm_btn"
+  send_button:
+    resourceId: "com.immomo.momo:id/message_btn_sendtext"
+  input_box:
+    resourceId: "com.immomo.momo:id/message_ed_msgeditor"
+  more_button:
+    resourceId: "com.immomo.momo:id/message_btn_more"
+
+# 聊天顶栏：关注 / 通过（同 resource-id，以文案区分；与 buttons.input_box 配合键盘检测）
+chat_topbar_friend:
+  topbar_button:
+    resourceId: "com.immomo.momo:id/topbar_button"
+  topbar_title:
+    resourceId: "com.immomo.momo:id/topbar_title"
+  input_box:
+    resourceId: "com.immomo.momo:id/message_ed_msgeditor"
+
+# 聊天页互关识别：点击左下语音按钮后，出现「按住说话」语音框则视为互关好友。
+chat_mutual_friend:
+  voice_button:
+    resourceId: "com.immomo.momo:id/message_btn_voice"
+  audio_panel:
+    resourceId: "com.immomo.momo:id/ll_audio_btn"
+  hold_to_talk:
+    text: "按住说话"
+
+# 聊天栏「+」面板里的猜拳问答入口
+rock_paper_scissors:
+  more_button:
+    resourceId: "com.immomo.momo:id/message_btn_more"
+  entry:
+    text: "猜拳问答"
+    resourceId: "com.immomo.momo:id/chatmenu_tv_name"
+  rematch:
+    text: "再来一局"
+    resourceId: "com.immomo.momo:id/chat_start_match_text"
+    containerResourceId: "com.immomo.momo:id/chat_start_match_pick_small"
+
+# 群聊邀请（2026-05-21 真机 dump 验证，OnePlus 8T + 陌陌渠道包）
+group_invite:
+  # 群聊顶栏：点击头像区域进入群信息页
+  # 头像在 AX 树中不可见（自定义 View），坐标约 [183,103]~[499,271]
+  # center 约 (350, 190)
+  group_avatar_center:
+    x: 350
+    y: 190
+  # 群聊顶栏标题布局（备用方案）
+  group_title_layout:
+    resourceId: "com.immomo.momo:id/group_chat_title_layout"
+  # 群信息页按钮（按 text 查找）
+  invite_friend_text: "邀请好友"
+  confirm_text: "完成"
+  cancel_text: "取消"
+  member_tab_text: "好友"
+
+# 拉黑好友（2026-05-21 真机 dump 验证）
+block_friend:
+  # 对话框右上角头像按钮
+  toolbar_avatar:
+    resourceId: "com.immomo.momo:id/chat_toolbar_avatar"
+  # 聊天设置页「拉黑」文字（label，不可点击，需用坐标）
+  block_text: "拉黑"
+  # 确认弹窗「拉黑」按钮（可点击）
+  confirm_block_button:
+    resourceId: "android:id/button1"
+    text: "拉黑"
+  # 确认弹窗「取消」按钮
+  cancel_button:
+    resourceId: "android:id/button2"
+    text: "取消"

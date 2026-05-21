@@ -1,0 +1,76 @@
+# momoqun — 陌陌群聊邀请自动化配置
+
+config:
+  # ---------- 轮次控制 ----------
+  round_end_wait_s: 10           # 每轮结束后等待秒数
+
+  # ---------- 招呼扫描 ----------
+  greet_scan_interval_s: 5       # 扫描「收到的招呼」间隔（秒）
+
+  # ---------- 聊天阶段 ----------
+  chat_rounds_before_follow: 3   # N 轮聊天后点「关注」
+  max_chat_rounds: 10            # S 最大会话轮数，超过后不再回复，仅检测互关
+  chat_round_wait_s: 30          # 发消息后等对方回复的超时（秒）
+
+  # ---------- 聊天策略 ----------
+  # 可选: "message_pool" | "ai"
+  # ai 模式后续实现
+  chat_strategy: "message_pool"
+  message_pools:
+    - id: 1
+      messages:
+        - "你好"
+        - "晚上好"
+        - "你好呀"
+        - "还没睡呢"
+        - "可以认识一下吗"
+    - id: 2
+      messages:
+        - "你在哪呢"
+        - "你在哪里哦"
+        - "在哪里"
+    - id: 3
+      messages:
+        - "你多大啊"
+        - "多大了"
+    - id: 4
+      messages:
+        - "你也是一个人？"
+        - "你是单身吗？"
+        - "你也一个人睡不着？"
+    - id: 5
+      messages:
+        - "晚点去瞅我朋叐圈➕一下我再發定位"
+
+  message_pool_rotation:
+    strategy: sequential
+
+  # ---------- 回关邀请 ----------
+  invite_back_message: "关注我一下吧，互关后拉你进群"
+
+  # ---------- 群聊 ----------
+  group_name: "我的群聊"         # 目标群聊名称（在聊天列表中查找）
+
+  # ---------- 通用参数 ----------
+  reply_interval:
+    min: 1.0
+    max: 3.0
+  chat_list_scan_interval:
+    min: 2.0
+    max: 4.0
+  click_offset:
+    x: 5
+    y: 5
+  delay:
+    min: 0.3
+    max: 0.8
+  max_consecutive_errors: 5
+
+  # ---------- 忽略名单 ----------
+  chat_ignore_names:
+    - "互动通知"
+    - "订阅内容"
+    - "陌陌"
+    - "超级抢车位"
+    - "猜你喜欢"
+    - "谁看过我"

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配置编辑 - momoqun</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0c13;color:#d4d4e0;min-height:100vh}
+.container{max-width:720px;margin:0 auto;padding:20px}
+h1{font-size:22px;padding:14px 0 18px;border-bottom:1px solid #1a1d2e;margin-bottom:20px}
+h1 a{color:#8b8ef2;font-size:14px;text-decoration:none;float:right}
+h2{font-size:15px;color:#9d9dcc;margin:28px 0 12px;padding-top:18px;border-top:1px solid #1a1d2e}
+label{display:block;font-size:13px;color:#8a8aa8;margin-bottom:5px;margin-top:16px}
+input,textarea,select{width:100%;padding:11px 14px;border:1px solid #252840;border-radius:10px;background:#111320;color:#e0e0e8;font-size:14px;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+input:hover,textarea:hover,select:hover{border-color:#3a3d58}
+input:focus,textarea:focus,select:focus{outline:none;border-color:#7c7ef4;box-shadow:0 0 0 3px rgba(124,126,244,.15)}
+textarea{resize:vertical;min-height:80px;font-family:'SF Mono',monospace;font-size:13px}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8aa8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+.btn-row{margin-top:24px;display:flex;gap:10px}
+.btn{padding:10px 22px;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{background:linear-gradient(135deg,#6366f1,#7c7ef4);color:#fff;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.btn-primary:hover{box-shadow:0 4px 14px rgba(99,102,241,.45)}
+.btn-secondary{background:#151827;color:#9d9dcc;border:1px solid #252840}
+.btn-secondary:hover{background:#1a1d32;border-color:#3a3d58}
+.btn-sm{padding:5px 14px;font-size:12px;border-radius:8px}
+.status{font-size:13px;margin-top:14px;padding:10px 14px;border-radius:10px}
+.status-ok{background:#063a2f;color:#6ee7b7;border:1px solid #0f5c48}
+.status-err{background:#5c1515;color:#fca5a5;border:1px solid #8b2020}
+.desc{font-size:11px;color:#555575;margin-bottom:4px}
+.nav{display:flex;gap:0;border-bottom:1px solid #1a1d2e;background:#111320;margin-bottom:20px}
+.nav a{padding:12px 20px;color:#777;text-decoration:none;font-size:14px;transition:color .2s}
+.nav a:hover,.nav a.active{color:#e0e0e8}
+.nav a.active{border-bottom:2px solid #6366f1}
+.pool-section{border:1px solid #1a1d2e;border-radius:12px;padding:14px;margin-top:12px;background:#111320;transition:border-color .2s,box-shadow .2s}
+.pool-section:hover{border-color:#2a2d48;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.pool-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.pool-header span{font-size:13px;color:#8b8ef2;font-weight:600}
+.pool-header .btn{font-size:11px}
+.pool-count-row{display:flex;align-items:center;gap:12px;margin-top:8px}
+.pool-count-row input{width:64px;text-align:center}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/">📊 仪表盘</a>
+  <a href="/config-page" class="active">⚙ 配置</a>
+  <a href="/devices">📱 设备</a>
+</nav>
+
+<div class="container">
+<h1>⚙ 配置编辑</h1>
+
+<div id="editor">
+  <!-- 核心参数 -->
+  <label>N — 几轮聊天后点关注</label>
+  <input id="chat_rounds_before_follow" type="number" min="1" max="20">
+
+  <label>S — 最大会话轮数（超过后不再回复，仅检测互关）</label>
+  <input id="max_chat_rounds" type="number" min="1" max="50">
+
+  <label>每轮结束等待时间（秒）</label>
+  <input id="round_end_wait_s" type="number" min="1" max="120">
+
+  <label>目标群聊名称</label>
+  <input id="group_name" type="text" placeholder="聊天列表中的群聊名">
+
+  <label>回关邀请消息</label>
+  <input id="invite_back_message" type="text">
+
+  <!-- 聊天策略 -->
+  <h2>💬 聊天策略</h2>
+  <label>回复方式</label>
+  <select id="chat_strategy" onchange="onStrategyChange()">
+    <option value="message_pool">消息池（从预设话术中随机选）</option>
+    <option value="ai">AI 接口（调用大模型生成回复）</option>
+  </select>
+  <p id="ai_hint" class="desc" style="display:none">※ AI 接口尚未实现，选择后将预留接口位置</p>
+
+  <!-- 消息池配置（策略=message_pool 时显示） -->
+  <div id="pool_config" style="display:none">
+    <label>消息池数量</label>
+    <div class="pool-count-row">
+      <button class="btn btn-secondary btn-sm" onclick="changePoolCount(-1)">−</button>
+      <input id="pool_count" type="number" min="1" max="20" value="5" onchange="renderPools()">
+      <button class="btn btn-secondary btn-sm" onclick="changePoolCount(1)">+</button>
+    </div>
+    <p class="desc">每个池一行一条话术，发送时随机选取。第 N 轮聊天用第 N 个池（循环）。</p>
+    <div id="pools_container"></div>
+  </div>
+
+  <!-- 时间参数 -->
+  <h2>⏱ 时间参数</h2>
+  <label>招呼扫描间隔（秒）</label>
+  <input id="greet_scan_interval_s" type="number" min="1" max="120" step="0.5">
+
+  <label>聊天后等待回复超时（秒）</label>
+  <input id="chat_round_wait_s" type="number" min="5" max="300">
+
+  <label>回复间隔最小值（秒）</label>
+  <input id="reply_interval_min" type="number" min="0" max="60" step="0.1">
+
+  <label>回复间隔最大值（秒）</label>
+  <input id="reply_interval_max" type="number" min="0" max="60" step="0.1">
+
+  <label>连续错误上限（达到后自动停）</label>
+  <input id="max_consecutive_errors" type="number" min="1" max="100">
+
+  <p class="desc">※ 保存后自动推送到所有 Worker，无需重启</p>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="save()">💾 保存配置</button>
+    <button class="btn btn-secondary" onclick="loadConfig()">↻ 重新加载</button>
+  </div>
+  <div id="status"></div>
+</div>
+</div>
+
+<script>
+const API = '';
+
+function onStrategyChange() {
+  const v = document.getElementById('chat_strategy').value;
+  document.getElementById('pool_config').style.display = v === 'message_pool' ? 'block' : 'none';
+  document.getElementById('ai_hint').style.display = v === 'ai' ? 'block' : 'none';
+}
+
+function changePoolCount(delta) {
+  const el = document.getElementById('pool_count');
+  el.value = Math.max(1, Math.min(20, parseInt(el.value) + delta));
+  renderPools();
+}
+
+function renderPools() {
+  const n = parseInt(document.getElementById('pool_count').value) || 5;
+  const c = document.getElementById('pools_container');
+  // 保留已有内容
+  const existing = [];
+  c.querySelectorAll('textarea').forEach(ta => existing.push(ta.value));
+  c.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const val = existing[i] !== undefined ? existing[i] : '';
+    c.innerHTML += `
+      <div class="pool-section">
+        <div class="pool-header">
+          <span>消息池 ${i + 1}</span>
+        </div>
+        <textarea data-pool="${i}" placeholder="每行一条话术，例如：&#10;你好&#10;晚上好&#10;在干嘛">${val.replace(/</g,'&lt;')}</textarea>
+      </div>`;
+  }
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch(`${API}/api/config`);
+    const cfg = await r.json();
+
+    document.getElementById('chat_rounds_before_follow').value = cfg.chat_rounds_before_follow || 3;
+    document.getElementById('max_chat_rounds').value = cfg.max_chat_rounds || 10;
+    document.getElementById('round_end_wait_s').value = cfg.round_end_wait_s || 10;
+    document.getElementById('group_name').value = cfg.group_name || '';
+    document.getElementById('invite_back_message').value = cfg.invite_back_message || '';
+    document.getElementById('chat_strategy').value = cfg.chat_strategy || 'message_pool';
+    document.getElementById('greet_scan_interval_s').value = cfg.greet_scan_interval_s || 5;
+    document.getElementById('chat_round_wait_s').value = cfg.chat_round_wait_s || 30;
+
+    const ri = cfg.reply_interval || {};
+    document.getElementById('reply_interval_min').value = ri.min || 1;
+    document.getElementById('reply_interval_max').value = ri.max || 3;
+
+    document.getElementById('max_consecutive_errors').value = cfg.max_consecutive_errors || 5;
+
+    // 消息池
+    const pools = cfg.message_pools || [];
+    document.getElementById('pool_count').value = pools.length || 5;
+    onStrategyChange();
+    renderPools();
+    // 填入已有内容
+    const tas = document.querySelectorAll('#pools_container textarea');
+    pools.forEach((p, i) => {
+      if (tas[i] && p.messages) {
+        tas[i].value = p.messages.join('\n');
+      }
+    });
+  } catch (e) {
+    showStatus('加载配置失败: ' + e.message, false);
+  }
+}
+
+async function save() {
+  // 收集消息池
+  const pools = [];
+  document.querySelectorAll('#pools_container textarea').forEach((ta, i) => {
+    const msgs = ta.value.split('\n').map(s => s.trim()).filter(s => s);
+    if (msgs.length > 0) {
+      pools.push({ id: i + 1, messages: msgs });
+    }
+  });
+
+  const cfg = {
+    chat_rounds_before_follow: parseInt(document.getElementById('chat_rounds_before_follow').value) || 3,
+    max_chat_rounds: parseInt(document.getElementById('max_chat_rounds').value) || 10,
+    round_end_wait_s: parseFloat(document.getElementById('round_end_wait_s').value) || 10,
+    group_name: document.getElementById('group_name').value.trim(),
+    invite_back_message: document.getElementById('invite_back_message').value.trim(),
+    chat_strategy: document.getElementById('chat_strategy').value,
+    message_pools: pools,
+    message_pool_rotation: { strategy: 'sequential' },
+    greet_scan_interval_s: parseFloat(document.getElementById('greet_scan_interval_s').value) || 5,
+    chat_round_wait_s: parseFloat(document.getElementById('chat_round_wait_s').value) || 30,
+    reply_interval: {
+      min: parseFloat(document.getElementById('reply_interval_min').value) || 1,
+      max: parseFloat(document.getElementById('reply_interval_max').value) || 3,
+    },
+    max_consecutive_errors: parseInt(document.getElementById('max_consecutive_errors').value) || 5,
+    chat_ignore_names: ['互动通知','订阅内容','陌陌','超级抢车位','猜你喜欢','谁看过我'],
+    click_offset: { x: 5, y: 5 },
+    delay: { min: 0.3, max: 0.8 },
+  };
+
+  try {
+    const r = await fetch(`${API}/api/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: cfg }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      showStatus('✅ 配置已保存并推送到所有 Worker', true);
+    } else {
+      showStatus('❌ ' + data.error, false);
+    }
+  } catch (e) {
+    showStatus('保存失败: ' + e.message, false);
+  }
+}
+
+function showStatus(msg, ok) {
+  const s = document.getElementById('status');
+  s.textContent = msg;
+  s.className = 'status ' + (ok ? 'status-ok' : 'status-err');
+  if (ok) setTimeout(() => s.textContent = '', 3000);
+}
+
+// 首次加载
+loadConfig();
+</script>
+</body>
+</html>
