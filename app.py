@@ -21,7 +21,7 @@ if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)  # 把 CWD 切到打包目录，保证 config/ data/ 等相对路径可用
     # 告诉 adbutils 去哪里找内置的 adb.exe
-    os.environ["ADB_EXECUTOR"] = os.path.join(
+    os.environ["ADBUTILS_ADB_PATH"] = os.path.join(
         BASE_DIR, "_internal", "adbutils", "binaries", "adb.exe"
     )
 else:
