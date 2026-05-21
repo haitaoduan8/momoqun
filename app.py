@@ -4,6 +4,7 @@
 from multiprocessing import freeze_support
 import io
 import os
+import subprocess
 import sys
 
 
@@ -17,11 +18,6 @@ if sys.stdout is None:
     sys.stdout = io.TextIOWrapper(_NullIO())
 if sys.stderr is None:
     sys.stderr = io.TextIOWrapper(_NullIO())
-# 兜底：某些库直接访问 __stdout__ / __stderr__
-if getattr(sys, "__stdout__", None) is None:
-    sys.__stdout__ = sys.stdout
-if getattr(sys, "__stderr__", None) is None:
-    sys.__stderr__ = sys.stderr
 
 import threading
 import time
@@ -33,14 +29,21 @@ if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
 
-    _adb_dir = os.path.join(BASE_DIR, "_internal", "adbutils", "binaries")
-    _adb_exe = os.path.join(_adb_dir, "adb.exe")
+    # adb.exe 现在放在 exe 同级目录（spec 里指定了 '.' 作为目标）
+    _adb_exe = os.path.join(BASE_DIR, "adb.exe")
     if os.path.isfile(_adb_exe):
         os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
-        os.environ["PATH"] = _adb_dir + os.pathsep + os.environ.get("PATH", "")
-        # 直接把 adbutils._utils.adb_path 替换掉，不依赖环境变量
-        import adbutils._utils
-        adbutils._utils.adb_path = lambda: _adb_exe
+        os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
+        # 主动启动 ADB server
+        _flags = 0x08000000 if sys.platform == "win32" else 0
+        try:
+            subprocess.run([_adb_exe, "start-server"], timeout=15,
+                           creationflags=_flags,
+                           stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,7 +57,6 @@ server.ELEMENTS_PATH = os.path.join(BASE_DIR, "config", "elements.yaml")
 def main():
     freeze_support()
 
-    # 预初始化 logging，防止 uvicorn 配日志时崩溃
     import logging
     logging.basicConfig(
         level=logging.INFO,

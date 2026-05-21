@@ -3,6 +3,11 @@
 # 构建：pip install pyinstaller && pyinstaller momoqun.spec
 # 采用 COLLECT 目录模式（非 onefile），因为运行时需要读取 webui/templates/ 和 config/
 
+import os as _os
+import adbutils as _adbutils
+
+_adb_src = _os.path.join(_os.path.dirname(_adbutils.__file__), 'binaries')
+
 a = Analysis(
     ['app.py'],
     pathex=[],
@@ -11,6 +16,10 @@ a = Analysis(
         ('webui/templates', 'webui/templates'),
         ('config', 'config'),
         ('data', 'data'),
+        # adb.exe 放在 exe 同级目录，确保一定能被找到
+        (_os.path.join(_adb_src, 'adb.exe'), '.'),
+        (_os.path.join(_adb_src, 'AdbWinApi.dll'), '.'),
+        (_os.path.join(_adb_src, 'AdbWinUsbApi.dll'), '.'),
     ],
     hiddenimports=[
         'fastapi',
