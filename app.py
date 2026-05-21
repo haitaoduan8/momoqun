@@ -29,11 +29,11 @@ if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
 
-    # adb.exe 现在放在 exe 同级目录（spec 里指定了 '.' 作为目标）
-    _adb_exe = os.path.join(BASE_DIR, "adb.exe")
+    # adb.exe 放在 _internal/adb.exe（spec datas '.'→_internal）
+    _adb_exe = os.path.join(BASE_DIR, "_internal", "adb.exe")
     if os.path.isfile(_adb_exe):
         os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
-        os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
+        os.environ["PATH"] = os.path.dirname(_adb_exe) + os.pathsep + os.environ.get("PATH", "")
         # 主动启动 ADB server
         _flags = 0x08000000 if sys.platform == "win32" else 0
         try:
