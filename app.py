@@ -1,6 +1,7 @@
 """Windows EXE 启动脚本。
-启动 FastAPI 服务器（后台线程）并自动打开浏览器。
+启动 FastAPI 服务器（后台线程）+ Flet 桌面窗口。
 """
+
 from multiprocessing import freeze_support
 import io
 import os
@@ -19,9 +20,12 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = io.TextIOWrapper(_NullIO())
 
+import atexit
 import threading
 import time
-import webbrowser
+
+_FLAGS = 0x08000000 if sys.platform == "win32" else 0
+_adb_exe = None
 
 
 # --- PyInstaller 路径兼容 ---
@@ -35,10 +39,9 @@ if getattr(sys, "frozen", False):
         os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
         os.environ["PATH"] = os.path.dirname(_adb_exe) + os.pathsep + os.environ.get("PATH", "")
         # 主动启动 ADB server
-        _flags = 0x08000000 if sys.platform == "win32" else 0
         try:
             subprocess.run([_adb_exe, "start-server"], timeout=15,
-                           creationflags=_flags,
+                           creationflags=_FLAGS,
                            stdin=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
@@ -52,6 +55,27 @@ import server
 server.BASE = BASE_DIR
 server.SETTINGS_PATH = os.path.join(BASE_DIR, "config", "settings.yaml")
 server.ELEMENTS_PATH = os.path.join(BASE_DIR, "config", "elements.yaml")
+
+
+def _cleanup_adb():
+    """退出时杀 adb server，防止文件被占用。"""
+    global _adb_exe
+    if _adb_exe is None:
+        # 开发模式：找 adb
+        import shutil
+        _adb_exe = shutil.which("adb") or "adb"
+    if _adb_exe:
+        try:
+            subprocess.run([_adb_exe, "kill-server"], timeout=10,
+                           creationflags=_FLAGS,
+                           stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
+atexit.register(_cleanup_adb)
 
 
 def main():
@@ -84,13 +108,17 @@ def main():
     t.start()
 
     time.sleep(2)
-    webbrowser.open(f"http://localhost:{port}")
 
-    try:
-        stop_event.wait()
-    except KeyboardInterrupt:
-        srv.should_exit = True
-        t.join(timeout=5)
+    # --- 启动 Flet 桌面窗口 ---
+    import flet as ft
+    from ui.app import main as ui_main
+
+    ft.app(target=ui_main)
+
+    # Flet 退出后关闭 server
+    srv.should_exit = True
+    _cleanup_adb()
+    t.join(timeout=5)
 
 
 if __name__ == "__main__":

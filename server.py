@@ -18,8 +18,7 @@ from typing import Any, Dict, List
 import uvicorn
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 # Windows: 禁止子进程弹出控制台窗口
 _WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
@@ -378,29 +377,24 @@ async def api_set_config(data: dict = None):
 
 
 # ---------------------------------------------------------------------------
-# Web UI
+# 关闭 API
 # ---------------------------------------------------------------------------
-def _read_html(filename: str) -> str:
-    path = os.path.join(BASE, "webui", "templates", filename)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    return f"<h1>{filename} 未找到</h1>"
+@app.post("/api/shutdown")
+async def api_shutdown():
+    """优雅关闭：停止所有设备线程，设置退出标志。"""
+    logger.info("收到 shutdown 请求，清理中...")
+    try:
+        mgr = _get_device_manager()
+        mgr.stop_all()
+    except Exception as e:
+        logger.warning("停止设备失败: %s", e)
 
+    def _do_exit():
+        time.sleep(1)
+        os._exit(0)
 
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    return _read_html("index.html")
-
-
-@app.get("/config-page", response_class=HTMLResponse)
-async def config_page():
-    return _read_html("config.html")
-
-
-@app.get("/devices", response_class=HTMLResponse)
-async def devices_page():
-    return _read_html("devices.html")
+    threading.Thread(target=_do_exit, daemon=True).start()
+    return {"ok": True, "message": "正在关闭..."}
 
 
 # ---------------------------------------------------------------------------

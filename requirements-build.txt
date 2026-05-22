@@ -5,3 +5,4 @@ pyinstaller
 uiautomator2
 opencv-python
 numpy
+flet
