@@ -15,7 +15,6 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('webui/templates', 'webui/templates'),
         ('config', 'config'),
         ('data', 'data'),
         # adb.exe 放在 exe 同级目录，确保一定能被找到
@@ -63,6 +62,9 @@ a = Analysis(
         'actions.scroll_engine',
         'actions.ui_hierarchy',
         'flet',
+        'flet_core',
+        'flet_runtime',
+        'requests',
         'ui',
         'ui.app',
         'ui.theme',
