@@ -82,16 +82,29 @@ class DeviceHandler:
             return False
 
     def _fallback_set_default_adb_keyboard(self) -> bool:
-        """不依赖 ``ime list`` / u2 ``set_input_ime``，仅尝试写 ``default_input_method``。"""
+        """多策略切换 ADB Keyboard，适配雷电等限制 settings put 的模拟器。"""
+        ime_id = _ADB_KEYBOARD_IME_ID
+        # 策略 1：ime enable + ime set（雷电需要先 enable）
+        try:
+            self.d.shell(["ime", "enable", ime_id], timeout=5)
+            time.sleep(0.3)
+            self.d.shell(["ime", "set", ime_id], timeout=5)
+            time.sleep(0.2 + random.uniform(0.0, 0.15))
+            if self._line_looks_like_adb_keyboard(self._default_input_method_line()):
+                return True
+        except Exception:
+            logging.debug("ime enable/set 失败，尝试 settings put 回退")
+
+        # 策略 2：settings put secure default_input_method
         try:
             self.d.shell(
-                ["settings", "put", "secure", "default_input_method", _ADB_KEYBOARD_IME_ID],
+                ["settings", "put", "secure", "default_input_method", ime_id],
                 timeout=5,
             )
             time.sleep(0.2 + random.uniform(0.0, 0.15))
             return self._line_looks_like_adb_keyboard(self._default_input_method_line())
         except Exception:
-            logging.exception("fallback_set_default_adb_keyboard: settings put 失败")
+            logging.exception("fallback_set_default_adb_keyboard: 所有策略均失败")
             return False
 
     def _wait_default_input_is_adb_keyboard(self, timeout: float) -> bool:
@@ -149,7 +162,7 @@ class DeviceHandler:
             raise last_err
         raise AdbBroadcastError("ADB_KEYBOARD_INPUT_TEXT 失败且无异常信息")
 
-    def ensure_input_ime_ready(self, timeout: float = 3.0) -> bool:
+    def ensure_input_ime_ready(self, timeout: float = 8.0) -> bool:
         """确保 ADB Keyboard（uiautomator2 IME）已被选为默认输入法。
 
         - 在 **ColorOS 等** 上 ``adb shell ime list`` 无权限时，u2 的 ``is_input_ime_installed`` /

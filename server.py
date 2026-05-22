@@ -219,6 +219,24 @@ async def api_adb_init(data: dict = None):
     except Exception as e:
         outputs.append(f"[JAR] 推送失败: {e}")
 
+    # 3. 启用并切换到 ADB Keyboard（雷电等模拟器需要 ime enable 先）
+    ime_id = "com.github.uiautomator/.AdbKeyboard"
+    try:
+        subprocess.run(
+            ["adb", "-s", serial, "shell", "ime", "enable", ime_id],
+            capture_output=True, text=True, timeout=10,
+            creationflags=_WIN_FLAGS,
+        )
+        result = subprocess.run(
+            ["adb", "-s", serial, "shell", "ime", "set", ime_id],
+            capture_output=True, text=True, timeout=10,
+            creationflags=_WIN_FLAGS,
+        )
+        out = (result.stdout or "").strip() or (result.stderr or "").strip()
+        outputs.append(f"[IME] {out or '已切换'}")
+    except Exception as e:
+        outputs.append(f"[IME] 切换失败: {e}")
+
     return {"ok": True, "output": "\n".join(outputs)}
 
 
