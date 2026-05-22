@@ -128,7 +128,10 @@ async def api_adb_connect(data: dict = None):
             ["adb", "connect", addr], capture_output=True, text=True, timeout=15,
             creationflags=_WIN_FLAGS,
         )
-        return {"ok": True, "output": (result.stdout or "").strip()}
+        output = (result.stdout or "").strip()
+        # adb connect 成功时输出包含 "connected"（包括 "already connected"）
+        ok = "connected" in output.lower()
+        return {"ok": ok, "output": output}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
