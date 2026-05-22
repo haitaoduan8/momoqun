@@ -23,6 +23,15 @@ from fastapi.staticfiles import StaticFiles
 
 # Windows: 禁止子进程弹出控制台窗口
 _WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
+
+# PyInstaller 打包后资源路径：spec 里把 assets/* 放到了 ./assets/
+def _get_assets_dir() -> str:
+    """返回 uiautomator2 资源目录（兼容 PyInstaller 和开发模式）。"""
+    if getattr(sys, "frozen", False):
+        return os.path.join(sys._MEIPASS, "assets")
+    # 开发模式：从 uiautomator2 包里找
+    import uiautomator2 as _u2
+    return os.path.join(os.path.dirname(_u2.__file__), "assets")
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -155,22 +164,53 @@ async def api_adb_disconnect(data: dict = None):
 
 @app.post("/api/adb/init")
 async def api_adb_init(data: dict = None):
+    """初始化设备：安装 ATX agent (含 ADB Keyboard) + 推送 u2.jar。
+    用纯 adb 命令，不依赖 Python，PyInstaller EXE 环境可用。"""
     if not isinstance(data, dict):
         data = {}
     serial = (data.get("serial") or "").strip()
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
+
+    assets_dir = _get_assets_dir()
+    apk_path = os.path.join(assets_dir, "app-uiautomator.apk")
+    jar_path = os.path.join(assets_dir, "u2.jar")
+
+    if not os.path.isfile(apk_path):
+        return JSONResponse({"ok": False, "error": f"APK 文件不存在: {apk_path}"}, status_code=500)
+    if not os.path.isfile(jar_path):
+        return JSONResponse({"ok": False, "error": f"JAR 文件不存在: {jar_path}"}, status_code=500)
+
+    outputs = []
+
+    # 1. 安装 ATX agent APK（包含 ADB Keyboard IME）
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "uiautomator2", "init", "--serial", serial],
+            ["adb", "-s", serial, "install", "-r", apk_path],
             capture_output=True, text=True, timeout=60,
             creationflags=_WIN_FLAGS,
         )
-        return {"ok": result.returncode == 0, "output": (result.stdout or "").strip()[-500:]}
-    except subprocess.TimeoutExpired:
-        return JSONResponse({"ok": False, "error": "初始化超时"}, status_code=500)
+        out = (result.stdout or "").strip() + "\n" + (result.stderr or "").strip()
+        outputs.append(f"[APK] {out.strip()}")
+        if result.returncode != 0 and "Success" not in out:
+            return {"ok": False, "output": "\n".join(outputs),
+                    "error": f"APK 安装失败 (code={result.returncode})"}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+        return JSONResponse({"ok": False, "error": f"安装 APK 失败: {e}"}, status_code=500)
+
+    # 2. 推送 u2.jar 到设备
+    try:
+        result = subprocess.run(
+            ["adb", "-s", serial, "push", jar_path, "/data/local/tmp/u2.jar"],
+            capture_output=True, text=True, timeout=30,
+            creationflags=_WIN_FLAGS,
+        )
+        out = (result.stdout or "").strip()
+        outputs.append(f"[JAR] {out}")
+    except Exception as e:
+        outputs.append(f"[JAR] 推送失败: {e}")
+
+    return {"ok": True, "output": "\n".join(outputs)}
 
 
 # ---------------------------------------------------------------------------
