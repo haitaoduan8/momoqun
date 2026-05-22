@@ -1,167 +1,157 @@
-"""ADB 管理面板：连接模拟器 + 扫描设备 + 初始化/添加。"""
+"""ADB 管理面板 — Card 包裹 + 圆角按钮。"""
 
 import flet as ft
 import threading
 import requests
 from ui.theme import (
-    BG_SECONDARY, BG_CARD, BG_HOVER, BORDER,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    ACCENT, DANGER, SUCCESS,
+    BG_CARD, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED,
+    ACCENT, ACCENT_HOVER, SUCCESS, DANGER, BTN_RADIUS,
 )
 
-API_BASE = "http://localhost:5100"
+API = "http://localhost:5100"
+
+
+def _btn(text, on_click, color=ACCENT, height=36):
+    return ft.ElevatedButton(
+        text=text,
+        on_click=on_click,
+        bgcolor=color,
+        color="#ffffff",
+        height=height,
+        style=ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
+            padding=ft.padding.symmetric(horizontal=16),
+        ),
+    )
+
+
+def _outline_btn(text, on_click, height=34):
+    return ft.OutlinedButton(
+        text=text,
+        on_click=on_click,
+        height=height,
+        style=ft.ButtonStyle(
+            color=TEXT_SECONDARY,
+            side=ft.BorderSide(1, BORDER),
+            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
+            padding=ft.padding.symmetric(horizontal=14),
+        ),
+    )
 
 
 class ADBPanel:
     def __init__(self):
-        super().__init__()
-        self._status = ft.Ref[ft.Text]()
-        self._addr_field = ft.Ref[ft.TextField]()
-        self._device_list = ft.Ref[ft.Column]()
+        self.status = ft.Ref[ft.Text]()
+        self.addr = ft.Ref[ft.TextField]()
+        self.dev_list = ft.Ref[ft.Column]()
 
     def build(self):
-        self._status_col = ft.Text(ref=self._status, size=12, color=TEXT_SECONDARY)
-
-        return ft.Column(
-            controls=[
-                ft.Container(
-                    content=ft.Row(
-                        [ft.Text("连接模拟器", size=13, color=TEXT_PRIMARY, weight="bold")],
-                    ),
-                    on_click=lambda _: self._toggle(),
-                ),
-                ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Row([
-                                ft.TextField(
-                                    ref=self._addr_field,
-                                    hint_text="127.0.0.1:7555",
-                                    border_color=BORDER,
-                                    bgcolor=BG_CARD,
-                                    color=TEXT_PRIMARY,
-                                    text_size=13,
-                                    expand=True,
-                                    height=36,
-                                    content_padding=ft.padding.only(left=10, right=10),
-                                ),
-                                ft.ElevatedButton(
-                                    "连接", on_click=self._do_connect,
-                                    bgcolor=ACCENT, color="#ffffff",
-                                    height=36, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=4)),
-                                ),
-                            ], spacing=6),
-                            ft.Row([
-                                ft.OutlinedButton(
-                                    "扫描设备", on_click=self._do_scan,
-                                    style=ft.ButtonStyle(color=TEXT_SECONDARY, side=ft.BorderSide(1, BORDER)),
-                                    height=32,
-                                ),
-                                self._status_col,
-                            ]),
-                            ft.Divider(height=1, color=BORDER),
-                            ft.Column(ref=self._device_list, spacing=4),
-                        ],
-                        spacing=8,
-                    ),
-                    padding=ft.padding.all(10),
-                    bgcolor=BG_SECONDARY,
-                    border=ft.border.only(bottom=ft.BorderSide(1, BORDER)),
-                ),
-            ],
+        return ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("ADB 管理", size=15, weight="bold", color=TEXT),
+                    ft.Divider(height=1, color=BORDER),
+                    ft.Row([
+                        ft.TextField(
+                            ref=self.addr,
+                            hint_text="127.0.0.1:7555",
+                            border_color=BORDER,
+                            bgcolor=BG_CARD,
+                            color=TEXT,
+                            text_size=14,
+                            expand=True,
+                            height=40,
+                            content_padding=ft.padding.only(left=12, right=12),
+                        ),
+                        _btn("连接", self._connect),
+                    ], spacing=8),
+                    ft.Row([
+                        _outline_btn("扫描设备", self._scan),
+                        ft.Text(ref=self.status, size=13, color=TEXT_SECONDARY),
+                    ], spacing=8),
+                    ft.Divider(height=1, color=BORDER),
+                    ft.Column(ref=self.dev_list, spacing=6),
+                ], spacing=10),
+                padding=20,
+            ),
+            color=BG_CARD,
+            elevation=2,
+            margin=10,
         )
 
-    def _toggle(self):
-        """折叠/展开面板 — 通过更新页面。"""
-        pass  # Flet ExpansionTile 可用，保持简单先不折叠
+    # ─── API ───
 
-    # ─── API 调用 ───
-
-    def _do_connect(self, e):
-        addr = self._addr_field.current.value.strip()
-        if not addr:
-            self._set_status("请输入地址", DANGER)
+    def _connect(self, e):
+        a = self.addr.current.value.strip()
+        if not a:
+            self._status("请输入地址", DANGER)
             return
-        self._set_status("连接中...", TEXT_SECONDARY)
-        threading.Thread(target=self._connect_thread, args=(addr,), daemon=True).start()
+        self._status("连接中...", TEXT_SECONDARY)
+        threading.Thread(target=self._conn, args=(a,), daemon=True).start()
 
-    def _connect_thread(self, addr):
+    def _conn(self, addr):
         try:
-            r = requests.post(f"{API_BASE}/api/adb/connect",
-                              json={"address": addr}, timeout=20)
+            r = requests.post(f"{API}/api/adb/connect", json={"address": addr}, timeout=20)
             d = r.json()
-            if d.get("ok"):
-                self._set_status(f"已连接 {addr}", SUCCESS)
-            else:
-                self._set_status(d.get("error") or d.get("output", "连接失败"), DANGER)
-            self._do_scan(None)
+            self._status(f"已连接 {addr}" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
+            self._scan(None)
         except Exception as ex:
-            self._set_status(f"错误: {ex}", DANGER)
+            self._status(str(ex), DANGER)
 
-    def _do_scan(self, e):
-        threading.Thread(target=self._scan_thread, daemon=True).start()
+    def _scan(self, e):
+        self._status("扫描中...", TEXT_SECONDARY)
+        threading.Thread(target=self._sc, daemon=True).start()
 
-    def _scan_thread(self):
+    def _sc(self):
         try:
-            r = requests.get(f"{API_BASE}/api/adb/devices", timeout=10)
-            data = r.json()
-            devs = data.get("devices", [])
+            r = requests.get(f"{API}/api/adb/devices", timeout=10)
+            devs = r.json().get("devices", [])
             items = []
-            for dev in devs:
-                serial = dev.get("serial", "")
-                items.append(
-                    ft.Row([
-                        ft.Text(serial, size=12, color=TEXT_PRIMARY, expand=True),
-                        ft.TextButton("初始化", on_click=lambda e, s=serial: self._do_init(s),
-                                      style=ft.ButtonStyle(color=ACCENT), height=28),
-                        ft.TextButton("添加", on_click=lambda e, s=serial: self._do_add(s),
-                                      style=ft.ButtonStyle(color=SUCCESS), height=28),
-                    ], spacing=4),
-                )
+            for d in devs:
+                s = d.get("serial", "")
+                items.append(ft.Row([
+                    ft.Text(s, size=13, color=TEXT, expand=True),
+                    ft.TextButton("初始化", on_click=lambda e, ser=s: self._init(ser),
+                                  style=ft.ButtonStyle(color=ACCENT)),
+                    ft.TextButton("添加", on_click=lambda e, ser=s: self._add(ser),
+                                  style=ft.ButtonStyle(color=SUCCESS)),
+                ], spacing=6))
             if not items:
-                items = [ft.Text("无设备", size=12, color=TEXT_MUTED)]
-            self._device_list.current.controls = items
-            self._device_list.current.update()
+                items = [ft.Text("无设备", size=13, color=TEXT_MUTED)]
+            self.dev_list.current.controls = items
+            self.dev_list.current.update()
+            self._status("扫描完成", TEXT_SECONDARY)
         except Exception as ex:
-            self._set_status(f"扫描失败: {ex}", DANGER)
+            self._status(str(ex), DANGER)
 
-    def _do_init(self, serial):
-        self._set_status(f"初始化 {serial}...", TEXT_SECONDARY)
-        threading.Thread(target=self._init_thread, args=(serial,), daemon=True).start()
+    def _init(self, ser):
+        self._status(f"初始化 {ser}...", TEXT_SECONDARY)
+        threading.Thread(target=self._in, args=(ser,), daemon=True).start()
 
-    def _init_thread(self, serial):
+    def _in(self, ser):
         try:
-            r = requests.post(f"{API_BASE}/api/adb/init",
-                              json={"serial": serial}, timeout=130)
+            r = requests.post(f"{API}/api/adb/init", json={"serial": ser}, timeout=140)
             d = r.json()
-            if d.get("ok"):
-                self._set_status(f"{serial} 初始化完成", SUCCESS)
-            else:
-                self._set_status(d.get("error", "初始化失败"), DANGER)
+            self._status(f"{ser} 完成" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
         except Exception as ex:
-            self._set_status(f"错误: {ex}", DANGER)
+            self._status(str(ex), DANGER)
 
-    def _do_add(self, serial):
-        self._set_status(f"添加 {serial}...", TEXT_SECONDARY)
-        threading.Thread(target=self._add_thread, args=(serial,), daemon=True).start()
+    def _add(self, ser):
+        self._status(f"添加 {ser}...", TEXT_SECONDARY)
+        threading.Thread(target=self._ad, args=(ser,), daemon=True).start()
 
-    def _add_thread(self, serial):
+    def _ad(self, ser):
         try:
-            r = requests.post(f"{API_BASE}/api/devices/add",
-                              json={"serial": serial, "name": serial}, timeout=10)
+            r = requests.post(f"{API}/api/devices/add", json={"serial": ser, "name": ser}, timeout=10)
             d = r.json()
-            if d.get("ok"):
-                self._set_status(f"{serial} 已添加", SUCCESS)
-            else:
-                self._set_status(d.get("error", "添加失败"), DANGER)
+            self._status(f"{ser} 已添加" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
         except Exception as ex:
-            self._set_status(f"错误: {ex}", DANGER)
+            self._status(str(ex), DANGER)
 
-    def _set_status(self, msg, color):
+    def _status(self, msg, color):
         try:
-            self._status.current.value = msg
-            self._status.current.color = color
-            self._status.current.update()
-            self._status_col.update()
+            self.status.current.value = msg
+            self.status.current.color = color
+            self.status.current.update()
         except Exception:
             pass
