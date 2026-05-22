@@ -183,6 +183,11 @@ async function refreshLocal() {
   try {
     const r = await fetch(`${API}/api/devices`);
     const devs = await r.json();
+    // 保护：API 返回错误对象（如 {"error": "..."}）时当作空数组
+    if (!Array.isArray(devs)) {
+      document.getElementById('local_list').innerHTML = '<div style="color:#ef4444">加载失败: ' + (devs.error || '未知错误') + '</div>';
+      return;
+    }
     let html = '';
     if (devs.length === 0) {
       html = '<div style="color:#666;text-align:center;padding:20px">暂无设备</div>';

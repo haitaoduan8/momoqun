@@ -3,3 +3,5 @@ uvicorn
 pyyaml
 pyinstaller
 uiautomator2
+opencv-python
+numpy
