@@ -18,8 +18,11 @@ from typing import Any, Dict, List
 import uvicorn
 import yaml
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
+# Windows: 禁止子进程弹出控制台窗口
+_WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -79,7 +82,8 @@ def _load_elements() -> dict:
 async def api_adb_devices():
     try:
         result = subprocess.run(
-            ["adb", "devices", "-l"], capture_output=True, text=True, timeout=10
+            ["adb", "devices", "-l"], capture_output=True, text=True, timeout=10,
+            creationflags=_WIN_FLAGS,
         )
         lines = result.stdout.strip().split("\n")[1:]
         devices = []
@@ -99,12 +103,13 @@ async def api_adb_devices():
 
 @app.post("/api/adb/connect")
 async def api_adb_connect(data: dict):
-    addr = (data or {}).get("address", "").strip()
+    addr = ((data or {}).get("address") or "").strip()
     if not addr:
         return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
     try:
         result = subprocess.run(
-            ["adb", "connect", addr], capture_output=True, text=True, timeout=15
+            ["adb", "connect", addr], capture_output=True, text=True, timeout=15,
+            creationflags=_WIN_FLAGS,
         )
         return {"ok": True, "output": result.stdout.strip()}
     except Exception as e:
@@ -113,12 +118,13 @@ async def api_adb_connect(data: dict):
 
 @app.post("/api/adb/disconnect")
 async def api_adb_disconnect(data: dict):
-    addr = (data or {}).get("address", "").strip()
+    addr = ((data or {}).get("address") or "").strip()
     if not addr:
         return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
     try:
         subprocess.run(
-            ["adb", "disconnect", addr], capture_output=True, text=True, timeout=10
+            ["adb", "disconnect", addr], capture_output=True, text=True, timeout=10,
+            creationflags=_WIN_FLAGS,
         )
         return {"ok": True}
     except Exception as e:
@@ -127,13 +133,14 @@ async def api_adb_disconnect(data: dict):
 
 @app.post("/api/adb/init")
 async def api_adb_init(data: dict):
-    serial = (data or {}).get("serial", "").strip()
+    serial = ((data or {}).get("serial") or "").strip()
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
     try:
         result = subprocess.run(
             [sys.executable, "-m", "uiautomator2", "init", "--serial", serial],
             capture_output=True, text=True, timeout=60,
+            creationflags=_WIN_FLAGS,
         )
         return {"ok": result.returncode == 0, "output": result.stdout.strip()[-500:]}
     except subprocess.TimeoutExpired:
@@ -154,8 +161,8 @@ async def api_devices():
 @app.post("/api/devices/add")
 async def api_devices_add(data: dict):
     """添加设备。body: {"serial": "127.0.0.1:5555", "name": "模拟器-1"}"""
-    serial = (data or {}).get("serial", "").strip()
-    name = (data or {}).get("name", "").strip() or serial
+    serial = ((data or {}).get("serial") or "").strip()
+    name = ((data or {}).get("name") or "").strip() or serial
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
 
@@ -174,7 +181,7 @@ async def api_devices_add(data: dict):
 @app.post("/api/devices/remove")
 async def api_devices_remove(data: dict):
     """移除设备。"""
-    serial = (data or {}).get("serial", "").strip()
+    serial = ((data or {}).get("serial") or "").strip()
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
     mgr = _get_device_manager()
