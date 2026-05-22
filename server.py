@@ -85,7 +85,7 @@ async def api_adb_devices():
             ["adb", "devices", "-l"], capture_output=True, text=True, timeout=10,
             creationflags=_WIN_FLAGS,
         )
-        lines = result.stdout.strip().split("\n")[1:]
+        lines = (result.stdout or "").strip().split("\n")[1:]
         devices = []
         for line in lines:
             line = line.strip()
@@ -102,8 +102,10 @@ async def api_adb_devices():
 
 
 @app.post("/api/adb/connect")
-async def api_adb_connect(data: dict):
-    addr = ((data or {}).get("address") or "").strip()
+async def api_adb_connect(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    addr = (data.get("address") or "").strip()
     if not addr:
         return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
     try:
@@ -111,14 +113,16 @@ async def api_adb_connect(data: dict):
             ["adb", "connect", addr], capture_output=True, text=True, timeout=15,
             creationflags=_WIN_FLAGS,
         )
-        return {"ok": True, "output": result.stdout.strip()}
+        return {"ok": True, "output": (result.stdout or "").strip()}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/api/adb/disconnect")
-async def api_adb_disconnect(data: dict):
-    addr = ((data or {}).get("address") or "").strip()
+async def api_adb_disconnect(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    addr = (data.get("address") or "").strip()
     if not addr:
         return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
     try:
@@ -132,8 +136,10 @@ async def api_adb_disconnect(data: dict):
 
 
 @app.post("/api/adb/init")
-async def api_adb_init(data: dict):
-    serial = ((data or {}).get("serial") or "").strip()
+async def api_adb_init(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
     try:
@@ -142,7 +148,7 @@ async def api_adb_init(data: dict):
             capture_output=True, text=True, timeout=60,
             creationflags=_WIN_FLAGS,
         )
-        return {"ok": result.returncode == 0, "output": result.stdout.strip()[-500:]}
+        return {"ok": result.returncode == 0, "output": (result.stdout or "").strip()[-500:]}
     except subprocess.TimeoutExpired:
         return JSONResponse({"ok": False, "error": "初始化超时"}, status_code=500)
     except Exception as e:
@@ -159,10 +165,12 @@ async def api_devices():
 
 
 @app.post("/api/devices/add")
-async def api_devices_add(data: dict):
+async def api_devices_add(data: dict = None):
     """添加设备。body: {"serial": "127.0.0.1:5555", "name": "模拟器-1"}"""
-    serial = ((data or {}).get("serial") or "").strip()
-    name = ((data or {}).get("name") or "").strip() or serial
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
+    name = (data.get("name") or "").strip() or serial
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
 
@@ -179,9 +187,11 @@ async def api_devices_add(data: dict):
 
 
 @app.post("/api/devices/remove")
-async def api_devices_remove(data: dict):
+async def api_devices_remove(data: dict = None):
     """移除设备。"""
-    serial = ((data or {}).get("serial") or "").strip()
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
     mgr = _get_device_manager()
@@ -197,7 +207,8 @@ async def api_devices_remove(data: dict):
 @app.post("/api/devices/{action}")
 async def api_devices_action(action: str, data: dict = None):
     """设备控制。action: start|stop|pause|resume|start_all|stop_all|pause_all|resume_all"""
-    data = data or {}
+    if not isinstance(data, dict):
+        data = {}
     serial = data.get("serial", "")
     mgr = _get_device_manager()
 
@@ -268,7 +279,9 @@ async def api_get_config():
 
 
 @app.put("/api/config")
-async def api_set_config(data: dict):
+async def api_set_config(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
     try:
         new_cfg = data.get("config") or data
         _save_settings(new_cfg)

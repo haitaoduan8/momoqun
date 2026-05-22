@@ -165,7 +165,7 @@ async function initDevice(serial) {
 async function addDevice(serial) {
   const name = serial; // 默认名字就是 serial
   try {
-    const r = await fetch(`${API}/api/local/add`, {
+    const r = await fetch(`${API}/api/devices/add`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({serial, name})
     });
@@ -181,7 +181,7 @@ async function addDevice(serial) {
 
 async function refreshLocal() {
   try {
-    const r = await fetch(`${API}/api/local/devices`);
+    const r = await fetch(`${API}/api/devices`);
     const devs = await r.json();
     let html = '';
     if (devs.length === 0) {
@@ -216,7 +216,7 @@ async function refreshLocal() {
 }
 
 async function ctrl(action, serial) {
-  const r = await fetch(`${API}/api/local/${action}`, {
+  const r = await fetch(`${API}/api/devices/${action}`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({serial})
   });
