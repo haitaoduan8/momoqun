@@ -28,7 +28,16 @@ _WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
 def _get_assets_dir() -> str:
     """返回 uiautomator2 资源目录（兼容 PyInstaller 和开发模式）。"""
     if getattr(sys, "frozen", False):
-        return os.path.join(sys._MEIPASS, "assets")
+        # COLLECT 模式下资源在 exe 同级目录，不用 _MEIPASS（有时指向 _internal）
+        base = os.path.dirname(sys.executable)
+        path = os.path.join(base, "assets")
+        if os.path.isdir(path):
+            return path
+        # 回退：_MEIPASS + assets
+        path = os.path.join(sys._MEIPASS, "assets")
+        if os.path.isdir(path):
+            return path
+        return sys._MEIPASS
     # 开发模式：从 uiautomator2 包里找
     import uiautomator2 as _u2
     return os.path.join(os.path.dirname(_u2.__file__), "assets")
@@ -187,7 +196,7 @@ async def api_adb_init(data: dict = None):
     try:
         result = subprocess.run(
             ["adb", "-s", serial, "install", "-r", apk_path],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=120,
             creationflags=_WIN_FLAGS,
         )
         out = (result.stdout or "").strip() + "\n" + (result.stderr or "").strip()
