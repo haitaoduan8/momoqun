@@ -29,8 +29,8 @@ if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
 
-    # adb.exe 放在 _internal/adb.exe（spec datas '.'→_internal）
-    _adb_exe = os.path.join(BASE_DIR, "_internal", "adb.exe")
+    # adb.exe 在 COLLECT 根目录（spec datas '.' 即 exe 同级目录）
+    _adb_exe = os.path.join(BASE_DIR, "adb.exe")
     if os.path.isfile(_adb_exe):
         os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
         os.environ["PATH"] = os.path.dirname(_adb_exe) + os.pathsep + os.environ.get("PATH", "")

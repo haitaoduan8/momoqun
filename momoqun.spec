@@ -35,6 +35,8 @@ a = Analysis(
         'uvicorn.protocols.http.auto',
         'uiautomator2',
         'adbutils',
+        'cv2',
+        'numpy',
         'lxml',
         'PIL',
         'retry2',

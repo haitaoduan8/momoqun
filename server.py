@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 
 import uvicorn
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +36,17 @@ ELEMENTS_PATH = os.path.join(BASE, "config", "elements.yaml")
 app = FastAPI(title="momoqun", docs_url=None, redoc_url=None)
 logger = logging.getLogger("server")
 
+
+# 全局异常处理器：确保所有错误都返回 JSON（而不是 HTML 500 页面）
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("未捕获的异常: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"error": f"服务器内部错误: {exc}"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # 设备管理器（唯一入口，管理所有设备）
 # ---------------------------------------------------------------------------
@@ -46,7 +57,11 @@ _device_manager_lock = threading.RLock()
 def _get_device_manager():
     global _device_manager
     if _device_manager is None:
-        from device_manager import DeviceManager
+        try:
+            from device_manager import DeviceManager
+        except Exception as e:
+            logger.exception("加载 device_manager 失败")
+            raise RuntimeError(f"加载设备管理模块失败: {e}") from e
         settings = _load_settings()
         elements = _load_elements()
         _device_manager = DeviceManager([], settings, elements)
