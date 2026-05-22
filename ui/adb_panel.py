@@ -12,7 +12,7 @@ from ui.theme import (
 API_BASE = "http://localhost:5100"
 
 
-class ADBPanel(ft.UserControl):
+class ADBPanel:
     def __init__(self):
         super().__init__()
         self._status = ft.Ref[ft.Text]()

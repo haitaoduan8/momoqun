@@ -14,7 +14,7 @@ API_BASE = "http://localhost:5100"
 POOL_LABELS = ["池1-破冰", "池2", "池3", "池4", "池5"]
 
 
-class ConfigPanel(ft.UserControl):
+class ConfigPanel:
     def __init__(self):
         super().__init__()
         self._status = ft.Ref[ft.Text]()
