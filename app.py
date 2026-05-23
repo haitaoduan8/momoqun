@@ -39,6 +39,11 @@ if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
 
+    # 显式设置 flet_web 路径，绕过 __file__ 在 PyInstaller 中的解析问题
+    _flet_web_path = os.path.join(BASE_DIR, "flet_web", "web")
+    if os.path.isdir(_flet_web_path):
+        os.environ["FLET_WEB_PATH"] = _flet_web_path
+
     # adb.exe 在 COLLECT 根目录（spec datas '.' 即 exe 同级目录）
     _adb_exe = os.path.join(BASE_DIR, "adb.exe")
     if os.path.isfile(_adb_exe):
