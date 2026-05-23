@@ -88,12 +88,37 @@ def main():
     freeze_support()
 
     import logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+
+    # 日志文件（console=False 时无控制台，写文件用于诊断）
+    _log_file = os.path.join(BASE_DIR, "momoqun.log")
+    _log_fh = logging.FileHandler(_log_file, encoding="utf-8", mode="w")
+    _log_fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
-        force=True,
-    )
+    ))
+
+    _root_logger = logging.getLogger()
+    _root_logger.setLevel(logging.DEBUG)
+    _root_logger.addHandler(_log_fh)
+
+    # 也加一个 console handler（如果 stdout 可用）
+    if sys.stdout and not isinstance(sys.stdout, io.TextIOWrapper) or (
+        isinstance(sys.stdout, io.TextIOWrapper)
+        and not isinstance(sys.stdout.buffer, _NullIO)
+    ):
+        _console = logging.StreamHandler()
+        _console.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+        _root_logger.addHandler(_console)
+
+    _root_logger.info("momoqun starting...")
+    _root_logger.info("BASE_DIR: %s", BASE_DIR)
+    _root_logger.info("sys._MEIPASS: %s", getattr(sys, "_MEIPASS", "N/A"))
+    _root_logger.info("sys.executable: %s", sys.executable)
+    _root_logger.info("frozen: %s", getattr(sys, "frozen", False))
+    _root_logger.info("Log file: %s", _log_file)
 
     import uvicorn
 
@@ -116,10 +141,30 @@ def main():
     time.sleep(2)
 
     # --- 启动 Flet 浏览器模式 ---
+    import logging
+    _log = logging.getLogger("momoqun")
+    _log.info("Starting Flet web browser...")
+
     import flet as ft
     from ui.app import main as ui_main
 
-    ft.app(target=ui_main, view=ft.AppView.WEB_BROWSER, port=8550)
+    # 诊断：flet_web 路径
+    try:
+        import flet_web
+        _web_dir = flet_web.get_package_web_dir()
+        _log.info("flet_web package dir: %s", os.path.dirname(flet_web.__file__))
+        _log.info("flet_web web dir: %s", _web_dir)
+        _log.info("web dir exists: %s", os.path.isdir(_web_dir))
+        if os.path.isdir(_web_dir):
+            _log.info("web dir files: %s", os.listdir(_web_dir)[:5])
+    except Exception as _e:
+        _log.warning("flet_web diag failed: %s", _e)
+
+    try:
+        ft.app(target=ui_main, view=ft.AppView.WEB_BROWSER, port=8550)
+    except Exception as _e:
+        _log.exception("Flet app crashed!")
+        raise
 
     # Flet 退出后关闭 server
     srv.should_exit = True
