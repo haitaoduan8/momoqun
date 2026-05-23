@@ -98,9 +98,13 @@ def _get_device_manager():
 # 配置读写
 # ---------------------------------------------------------------------------
 def _load_settings() -> dict:
-    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    return raw.get("config") or {}
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        return raw.get("config") or {}
+    except FileNotFoundError:
+        logger.warning("配置文件不存在: %s，使用默认配置", SETTINGS_PATH)
+        return {}
 
 
 def _save_settings(settings: dict) -> None:
@@ -112,8 +116,12 @@ def _save_settings(settings: dict) -> None:
 
 
 def _load_elements() -> dict:
-    with open(ELEMENTS_PATH, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(ELEMENTS_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning("元素配置文件不存在: %s，使用默认配置", ELEMENTS_PATH)
+        return {}
 
 
 # ---------------------------------------------------------------------------
