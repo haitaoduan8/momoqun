@@ -70,10 +70,20 @@ def main(page: ft.Page):
 
     cfg.load()
 
-    # ── 标题 ──
+    # ── 标题 + 退出按钮 ──
     title = ft.Container(
-        content=ft.Text("momoqun", size=22, weight="bold", color=TEXT),
-        padding=ft.padding.only(bottom=10),
+        content=ft.Row([
+            ft.Text("momoqun", size=22, weight="bold", color=TEXT),
+            ft.ElevatedButton(
+                "安全退出", on_click=lambda _: (_cleanup(), page.update()),
+                bgcolor="#f87171", color="#ffffff", height=34,
+                style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=ft.padding.symmetric(horizontal=14),
+                ),
+            ),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        padding=ft.Padding(left=0, top=0, right=0, bottom=10),
     )
 
     # ── 控件区（左 290 固定 + 右弹性） ──

@@ -61,7 +61,7 @@ class ADBPanel:
                             text_size=14,
                             expand=True,
                             height=40,
-                            content_padding=ft.padding.only(left=12, right=12),
+                            content_padding=ft.Padding(left=12, top=0, right=12, bottom=0),
                         ),
                         _btn("连接", self._connect),
                     ], spacing=8),

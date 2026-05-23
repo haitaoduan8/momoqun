@@ -26,7 +26,7 @@ def _field(label, ref, val="", hint="", multiline=False, height=38):
             height=height if not multiline else 64,
             multiline=multiline,
             expand=True,
-            content_padding=ft.padding.only(left=10, right=10, top=7, bottom=7),
+            content_padding=ft.Padding(left=10, top=7, right=10, bottom=7),
         ),
     ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
@@ -104,7 +104,7 @@ class ConfigPanel:
                     ref=self.pool_count, value="5", text_size=13,
                     border_color=BORDER, bgcolor=BG_ELEVATED, color=TEXT,
                     width=60, height=34,
-                    content_padding=ft.padding.only(left=8, right=8),
+                    content_padding=ft.Padding(left=8, top=0, right=8, bottom=0),
                     text_align="center",
                     on_change=self._on_pool_count_changed,
                 ),

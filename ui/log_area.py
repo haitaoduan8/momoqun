@@ -52,7 +52,7 @@ class LogArea:
                         expand=True,
                     ),
                 ], spacing=8),
-                padding=ft.padding.only(left=16, top=12, right=16, bottom=12),
+                padding=ft.Padding(left=16, top=12, right=16, bottom=12),
             ),
             color=BG_CARD,
             elevation=0,
