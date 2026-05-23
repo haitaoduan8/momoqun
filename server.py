@@ -19,6 +19,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # Windows: 禁止子进程弹出控制台窗口
 _WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
@@ -52,6 +53,14 @@ ELEMENTS_PATH = os.path.join(BASE, "config", "elements.yaml")
 # ---------------------------------------------------------------------------
 app = FastAPI(title="momoqun", docs_url=None, redoc_url=None)
 logger = logging.getLogger("server")
+
+# CORS：Flet Web 在 localhost:8550 调 API 需要跨域
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # 全局异常处理器：确保所有错误都返回 JSON（而不是 HTML 500 页面）
