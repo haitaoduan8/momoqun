@@ -25,8 +25,7 @@ class DeviceList:
                 ft.Text(ref=self.count, size=14, color=TEXT_SECONDARY),
                 ft.Column(ref=self.list, spacing=10),
             ], spacing=12),
-            margin=10,
-            expand=True,
+            margin=ft.margin.only(top=0, bottom=0),
         )
 
     def did_mount(self):
@@ -76,31 +75,41 @@ class DeviceList:
                             ], spacing=14),
                             ft.Row([
                                 ft.IconButton(
-                                    icon=ft.icons.PLAY_ARROW, icon_color=SUCCESS,
+                                    icon=ft.Icons.PLAY_ARROW, icon_color=SUCCESS,
                                     tooltip="启动",
                                     on_click=lambda e, s=ser: self._act("start", s),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.PAUSE, icon_color=WARNING,
+                                    icon=ft.Icons.PAUSE, icon_color=WARNING,
                                     tooltip="暂停",
                                     on_click=lambda e, s=ser: self._act("pause", s),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.STOP, icon_color=DANGER,
+                                    icon=ft.Icons.STOP, icon_color=DANGER,
                                     tooltip="停止",
                                     on_click=lambda e, s=ser: self._act("stop", s),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.REPLAY, icon_color=ACCENT,
+                                    icon=ft.Icons.REPLAY, icon_color=ACCENT,
                                     tooltip="继续",
                                     on_click=lambda e, s=ser: self._act("resume", s),
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.BUILD, icon_color=TEXT_SECONDARY,
+                                    tooltip="初始化",
+                                    on_click=lambda e, s=ser: self._init_dev(s),
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.DELETE_OUTLINE, icon_color=DANGER,
+                                    tooltip="移除设备",
+                                    on_click=lambda e, s=ser: self._act("remove", s),
                                 ),
                             ], spacing=4),
                         ], spacing=8),
                         padding=20,
                     ),
                     color=BG_CARD,
-                    elevation=3,
+                    elevation=0,
                     margin=ft.margin.only(bottom=6),
                 )
             )
@@ -126,4 +135,9 @@ class DeviceList:
     def _act(self, action, ser):
         threading.Thread(target=lambda: requests.post(
             f"{API}/api/devices/{action}", json={"serial": ser}, timeout=10
+        ), daemon=True).start()
+
+    def _init_dev(self, ser):
+        threading.Thread(target=lambda: requests.post(
+            f"{API}/api/adb/init", json={"serial": ser}, timeout=140
         ), daemon=True).start()

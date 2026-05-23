@@ -75,7 +75,7 @@ class ADBPanel:
                 padding=20,
             ),
             color=BG_CARD,
-            elevation=2,
+            elevation=0,
             margin=10,
         )
 
@@ -115,6 +115,8 @@ class ADBPanel:
                                   style=ft.ButtonStyle(color=ACCENT)),
                     ft.TextButton("添加", on_click=lambda e, ser=s: self._add(ser),
                                   style=ft.ButtonStyle(color=SUCCESS)),
+                    ft.TextButton("断开", on_click=lambda e, ser=s: self._disc(ser),
+                                  style=ft.ButtonStyle(color=DANGER)),
                 ], spacing=6))
             if not items:
                 items = [ft.Text("无设备", size=13, color=TEXT_MUTED)]
@@ -145,6 +147,19 @@ class ADBPanel:
             r = requests.post(f"{API}/api/devices/add", json={"serial": ser, "name": ser}, timeout=10)
             d = r.json()
             self._status(f"{ser} 已添加" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
+        except Exception as ex:
+            self._status(str(ex), DANGER)
+
+    def _disc(self, ser):
+        self._status(f"断开 {ser}...", TEXT_SECONDARY)
+        threading.Thread(target=self._dc, args=(ser,), daemon=True).start()
+
+    def _dc(self, ser):
+        try:
+            r = requests.post(f"{API}/api/adb/disconnect", json={"address": ser}, timeout=10)
+            d = r.json()
+            self._status(f"{ser} 已断开" if d.get("ok") else "失败", SUCCESS if d.get("ok") else DANGER)
+            self._scan(None)
         except Exception as ex:
             self._status(str(ex), DANGER)
 

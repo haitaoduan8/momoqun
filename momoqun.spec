@@ -71,6 +71,7 @@ a = Analysis(
         'ui.adb_panel',
         'ui.config_panel',
         'ui.device_list',
+        'ui.log_area',
     ],
     hookspath=[],
     hooksconfig={},

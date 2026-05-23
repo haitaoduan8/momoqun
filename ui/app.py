@@ -1,4 +1,4 @@
-"""momoqun 桌面主窗口 — 三栏 Card 布局 + 深灰主题。"""
+"""momoqun 桌面主窗口 — 响应式布局：Column(expand) → Row(控件+设备) + 日志(expand)。"""
 
 import flet as ft
 import requests
@@ -7,12 +7,11 @@ import sys
 import os
 import atexit
 
-from ui.theme import (
-    apply_theme, BG, BG_SURFACE, BORDER, TEXT, TEXT_MUTED, BG_CARD,
-)
+from ui.theme import apply_theme, BG, BG_CARD, BG_SURFACE, BORDER, TEXT, TEXT_SECONDARY
 from ui.adb_panel import ADBPanel
 from ui.config_panel import ConfigPanel
 from ui.device_list import DeviceList
+from ui.log_area import LogArea
 
 API = "http://localhost:5100"
 _FLAGS = 0x08000000 if sys.platform == "win32" else 0
@@ -51,63 +50,77 @@ def _cleanup():
 atexit.register(_cleanup)
 
 
-# ─── 主入口 ───
-
 def main(page: ft.Page):
     page.title = "momoqun"
+    page.window_resizable = True
     page.window_width = 1250
     page.window_height = 820
     page.window_min_width = 960
     page.window_min_height = 620
+    page.padding = 20
     apply_theme(page)
 
     page.on_window_destroy = lambda _: _cleanup()
 
+    # ── 组件 ──
     adb = ADBPanel()
     cfg = ConfigPanel()
     dev = DeviceList(page)
+    log = LogArea()
 
     cfg.load()
 
-    # ── 左侧 ──
-    left = ft.Container(
-        content=ft.Column([
-            ft.Container(
-                content=ft.Text("momoqun", size=20, weight="bold", color=TEXT),
-                padding=ft.padding.only(left=20, top=16, bottom=10),
-            ),
-            adb.build(),
-            cfg.build(),
-        ], scroll=ft.ScrollMode.AUTO, spacing=0),
-        width=290,
-        bgcolor=BG_SURFACE,
-        border=ft.border.only(right=ft.BorderSide(1, BORDER)),
+    # ── 标题 ──
+    title = ft.Container(
+        content=ft.Text("momoqun", size=22, weight="bold", color=TEXT),
+        padding=ft.padding.only(bottom=10),
     )
 
-    # ── 中部 ──
-    middle = ft.Container(
-        content=ft.Column([
+    # ── 控件区（左 290 固定 + 右弹性） ──
+    controls_row = ft.Row(
+        controls=[
             ft.Container(
-                content=ft.Text("设备列表", size=18, weight="bold", color=TEXT),
-                padding=ft.padding.only(left=10, top=15, bottom=6),
+                content=ft.Column([
+                    adb.build(),
+                    cfg.build(),
+                ], scroll=ft.ScrollMode.AUTO, spacing=0),
+                width=300,
             ),
-            dev.build(),
-        ], scroll=ft.ScrollMode.AUTO),
+            ft.VerticalDivider(width=1, color=BORDER),
+            ft.Container(
+                content=ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Text("已添加设备", size=15, weight="bold", color=TEXT),
+                            ft.Divider(height=1, color=BORDER),
+                            dev.build(),
+                        ], scroll=ft.ScrollMode.AUTO, expand=True, spacing=10),
+                        padding=20,
+                        expand=True,
+                    ),
+                    color=BG_CARD,
+                    elevation=0,
+                    margin=10,
+                    expand=True,
+                ),
+                width=750,
+            ),
+        ],
         expand=True,
+        spacing=0,
+        vertical_alignment=ft.CrossAxisAlignment.STRETCH,
     )
 
-    # ── 右侧（空白） ──
-    right = ft.Container(
-        content=ft.Column(),
-        width=200,
-        bgcolor=BG_SURFACE,
-        border=ft.border.only(left=ft.BorderSide(1, BORDER)),
+    # ── 日志区（默认折叠，点击展开） ──
+    log_area = ft.Container(
+        content=log.build(),
     )
 
+    # ── 顶级容器 ──
     page.add(
-        ft.Row(
-            controls=[left, middle, right],
-            spacing=0,
+        ft.Column(
+            controls=[title, controls_row, log_area],
             expand=True,
+            spacing=0,
         )
     )
