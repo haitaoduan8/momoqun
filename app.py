@@ -36,15 +36,11 @@ _adb_exe = None
 
 # --- PyInstaller 路径兼容 ---
 if getattr(sys, "frozen", False):
-    # COLLECT 模式：exe 同级目录才是真正的根（config/、data/、flet_web/web/ 都在这）
-    BASE_DIR = os.path.dirname(sys.executable)
+    BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
 
-    # adb.exe 在 exe 同级目录
+    # adb.exe 在 COLLECT 根目录（spec datas '.' 即 exe 同级目录）
     _adb_exe = os.path.join(BASE_DIR, "adb.exe")
-    if not os.path.isfile(_adb_exe):
-        # 回退到 _MEIPASS
-        _adb_exe = os.path.join(sys._MEIPASS, "adb.exe")
     if os.path.isfile(_adb_exe):
         os.environ["ADBUTILS_ADB_PATH"] = _adb_exe
         os.environ["PATH"] = os.path.dirname(_adb_exe) + os.pathsep + os.environ.get("PATH", "")
@@ -120,12 +116,6 @@ def main():
     time.sleep(2)
 
     # --- 启动 Flet 浏览器模式 ---
-    # Flet Web 静态资源路径：COLLECT 模式下在 exe 同级目录，不在 _internal
-    if getattr(sys, "frozen", False):
-        web_path = os.path.join(BASE_DIR, "flet_web", "web")
-        if os.path.isdir(web_path):
-            os.environ["FLET_WEB_PATH"] = web_path
-
     import flet as ft
     from ui.app import main as ui_main
 
