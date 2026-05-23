@@ -6,9 +6,11 @@
 import os as _os
 import adbutils as _adbutils
 import uiautomator2 as _u2
+import flet_web as _flet_web
 
 _adb_src = _os.path.join(_os.path.dirname(_adbutils.__file__), 'binaries')
 _u2_assets = _os.path.join(_os.path.dirname(_u2.__file__), 'assets')
+_flet_web_dir = _os.path.join(_os.path.dirname(_flet_web.__file__), 'web')
 
 a = Analysis(
     ['app.py'],
@@ -23,6 +25,7 @@ a = Analysis(
         (_os.path.join(_adb_src, 'AdbWinUsbApi.dll'), '.'),
         (_os.path.join(_u2_assets, 'app-uiautomator.apk'), 'assets'),
         (_os.path.join(_u2_assets, 'u2.jar'), 'assets'),
+        (_flet_web_dir, 'flet_web/web'),
     ],
     hiddenimports=[
         'fastapi',

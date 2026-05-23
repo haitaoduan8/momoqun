@@ -115,7 +115,7 @@ def main():
 
     time.sleep(2)
 
-    # --- 启动 Flet（浏览器模式，不依赖 flet-desktop）---
+    # --- 启动 Flet 浏览器模式 ---
     import flet as ft
     from ui.app import main as ui_main
 
