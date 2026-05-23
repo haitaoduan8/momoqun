@@ -13,6 +13,12 @@ import sys
 class _NullIO(io.RawIOBase):
     def write(self, b): return len(b) if b else 0
     def read(self, n=-1): return b""
+    def readable(self): return True
+    def writable(self): return True
+    def seekable(self): return True
+    def seek(self, offset, whence=0): return 0
+    def truncate(self, size=None): return 0
+    def tell(self): return 0
     def isatty(self): return False
 
 if sys.stdout is None:
