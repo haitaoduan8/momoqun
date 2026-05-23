@@ -115,11 +115,11 @@ def main():
 
     time.sleep(2)
 
-    # --- 启动 Flet 桌面窗口 ---
+    # --- 启动 Flet（浏览器模式，不依赖 flet-desktop）---
     import flet as ft
     from ui.app import main as ui_main
 
-    ft.app(target=ui_main)
+    ft.app(target=ui_main, view=ft.AppView.WEB_BROWSER, port=8550)
 
     # Flet 退出后关闭 server
     srv.should_exit = True

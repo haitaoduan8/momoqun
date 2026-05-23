@@ -6,4 +6,3 @@ uiautomator2
 opencv-python
 numpy
 flet
-flet-desktop

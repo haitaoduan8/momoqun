@@ -62,7 +62,6 @@ a = Analysis(
         'actions.scroll_engine',
         'actions.ui_hierarchy',
         'flet',
-        'flet_desktop',
         'flet_core',
         'flet_runtime',
         'requests',
