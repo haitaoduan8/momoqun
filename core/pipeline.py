@@ -189,6 +189,14 @@ class SessionRound:
             self._logger.debug("Step B: friends.json 为空")
             return
 
+        # 诊断日志：当前 friends.json 中的所有好友状态
+        self._logger.info(
+            "Step B: friends.json 共 %d 个好友: %s",
+            len(all_friends),
+            [(f.get("name", uid), f.get("chat_round", "?"), f.get("status", "?"))
+             for uid, f in all_friends.items()],
+        )
+
         seen_names: set = set()
         processed = 0
 
@@ -205,6 +213,7 @@ class SessionRound:
 
             root = ET.fromstring(xml)
             found_any_row = False
+            screen_rows = []  # 诊断：当前屏所有聊天行
 
             for node in root.iter():
                 if node.attrib.get("resource-id") != row_rid:
@@ -224,11 +233,13 @@ class SessionRound:
                 if not row_name or row_name in ignore_names:
                     continue
                 if row_name in seen_names:
+                    screen_rows.append(f"({row_name}, 已处理)")
                     continue
 
                 # 模糊匹配 friends.json 中的好友
                 matched = self._match_friend(all_friends, row_name)
                 if matched is None:
+                    screen_rows.append(f"({row_name}, 未匹配)")
                     continue
 
                 uid = matched["uid"]
@@ -238,19 +249,22 @@ class SessionRound:
 
                 # ---- 决定动作 ----
                 if status == "done":
+                    screen_rows.append(f"({row_name}, done-跳过)")
                     continue
 
                 if cr == 0:
-                    # 新通过的好友，发破冰
                     action = "icebreaker"
                 elif has_badge and cr < self.S:
-                    # 有未读消息，发跟进
                     action = "reply"
                 else:
+                    screen_rows.append(
+                        f"({row_name}, cr={cr} badge={has_badge}-跳过)"
+                    )
                     continue
 
                 # ---- 执行 ----
                 seen_names.add(row_name)
+                screen_rows.append(f"({row_name}, {action})")
                 self._logger.info(
                     "Step B: %s → %s (cr=%d)", row_name, action, cr
                 )
@@ -284,6 +298,11 @@ class SessionRound:
                 # 退出对话框，继续扫描
                 self.chatter.go_back_to_chat_list()
                 random_delay(self.settings)
+
+            # 诊断：输出当前屏扫描结果
+            self._logger.info(
+                "Step B: scroll=%d 本屏行: %s", scroll, screen_rows
+            )
 
             # 当前屏没有找到任何聊天行（已滑到底），提前退出
             if not found_any_row and scroll > 0:

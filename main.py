@@ -42,12 +42,20 @@ def main() -> None:
     args = parser.parse_args()
 
     # 日志
+    import os as _os
+    _log_dir = _os.path.expanduser("~/Desktop")
+    _log_file = _os.path.join(_log_dir, "momoqun.log")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
+        handlers=[
+            logging.FileHandler(_log_file, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
     )
     logger = logging.getLogger("momoqun")
+    logger.info("日志文件: %s", _log_file)
 
     # 加载配置
     try:
