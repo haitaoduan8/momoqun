@@ -1,13 +1,14 @@
 """按轮次批量处理好友会话。
 
-每轮四个阶段：
-  Phase 1 — 通过新招呼 + 发破冰消息
-  Phase 2 — 回复已有好友的未读消息
+每轮三个阶段：
+  Step A — 通过新招呼（只点按钮，不发消息）
+  Step B — 聊天列表统一扫描 + 处理（cr=0 发破冰，有未读发回复）
   Phase 3 — 关注 + 互关检测 + 邀请进群 + 拉黑
   Phase 4 — 等待下一轮
 """
 
 import logging
+import random
 import time
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -20,7 +21,7 @@ from core.greeter import GreetingScanner
 from core.group_invite import GroupInviter
 from core.message_pool import MessagePoolManager
 from data.storage import StorageHandler
-from utils.helpers import random_delay
+from utils.helpers import parse_bounds, random_delay
 
 
 # ---------------------------------------------------------------------------
@@ -30,10 +31,8 @@ from utils.helpers import random_delay
 class Phase:
     """好友管线阶段标签（纯日志用途）。"""
     IDLE = "IDLE"
-    SCANNING = "SCANNING"
-    ENTERING_SAYHI = "ENTERING_SAYHI"
     APPROVING = "APPROVING"
-    ENTERING_CHAT = "ENTERING_CHAT"
+    SCANNING = "SCANNING"
     CHATTING = "CHATTING"
     CLICKING_FOLLOW = "CLICKING_FOLLOW"
     CHECKING_MUTUAL = "CHECKING_MUTUAL"
@@ -88,7 +87,7 @@ class SessionRound:
     # ------------------------------------------------------------------
 
     def execute_one_round(self) -> None:
-        """执行一整轮会话：Phase 1 → Phase 2 → Phase 3 → Phase 4。"""
+        """执行一整轮：Step A → Step B → Phase 3 → Phase 4。"""
         self.round_number += 1
         self.friends_processed_this_round = 0
 
@@ -97,14 +96,14 @@ class SessionRound:
         self._logger.info("=" * 40)
 
         try:
-            self._phase1_approve_new()
+            self._step_approve_greetings()
         except Exception:
-            self._logger.exception("Phase 1 异常，继续 Phase 2")
+            self._logger.exception("Step A 异常，继续 Step B")
 
         try:
-            self._phase2_reply_unread()
+            self._step_scan_and_process()
         except Exception:
-            self._logger.exception("Phase 2 异常，继续 Phase 3")
+            self._logger.exception("Step B 异常，继续 Phase 3")
 
         try:
             self._phase3_follow_and_mutual()
@@ -120,25 +119,25 @@ class SessionRound:
         )
 
     # ------------------------------------------------------------------
-    # Phase 1 — 通过新招呼 + 发破冰消息
+    # Step A — 通过新招呼（只点按钮，入库 cr=0，不发消息）
     # ------------------------------------------------------------------
 
-    def _phase1_approve_new(self) -> None:
-        """通过所有新招呼，每个新好友发破冰消息（池 1）。
+    def _step_approve_greetings(self) -> None:
+        """在招呼列表中逐个点击「通过」，收集昵称并入库 cr=0。
 
-        Phase 1 新通过的好友 chat_round=0，本轮 Phase 2 不再回复。
+        不发消息，消息的发送统一在 Step B 的聊天列表扫描中完成。
         """
         self.current_phase = Phase.APPROVING
 
         badge = self.greeter.scan_badge()
         if badge <= 0:
-            self._logger.debug("Phase 1: 无新招呼")
+            self._logger.debug("Step A: 无新招呼")
             return
 
-        self._logger.info("Phase 1: 发现 %d 个新招呼", badge)
+        self._logger.info("Step A: 发现 %d 个新招呼", badge)
 
         if not self.greeter.enter_sayhi_list():
-            self._logger.warning("Phase 1: 进入招呼列表失败")
+            self._logger.warning("Step A: 进入招呼列表失败")
             return
 
         time.sleep(0.8)
@@ -147,190 +146,192 @@ class SessionRound:
         while True:
             result = self.greeter.approve_one()
             if result is None:
-                self._logger.info("Phase 1: 无更多「通过」按钮")
+                self._logger.info("Step A: 无更多「通过」按钮")
                 break
 
             name = result.get("name") or "unknown"
-            self._logger.info("Phase 1: 已通过招呼 %s", name)
-
-            # 入库：status=accepted，chat_round=0 标记本轮新通过
+            # 入库 cr=0，不区分名字是否识别到
             self.storage.mark_status(name, "accepted", chat_round=0, name=name)
-
-            # 等对话框打开（雷电等模拟器跳转慢，之前 1-2 秒不够）
-            input_rid = self.chatter._get_rid("buttons", "input_box")
-            dialog_ready = False
-            if input_rid:
-                deadline = time.time() + 5.0
-                while time.time() < deadline:
-                    try:
-                        el = self.driver.d(resourceId=input_rid)
-                        if el.exists:
-                            dialog_ready = True
-                            break
-                    except Exception:
-                        pass
-                    time.sleep(0.5)
-
-            if not dialog_ready:
-                self._logger.warning("Phase 1: 对话框未打开，跳过发消息 -> %s", name)
-                self.greeter.go_back_to_chat_list()
-                approved_count += 1
-                if not self.greeter.enter_sayhi_list():
-                    break
-                time.sleep(0.8)
-                continue
-
-            # 发破冰消息（消息池第 1 池）
-            if self._pool:
-                icebreaker = self._pool.get_message_for_round(1)
-                self._logger.info("Phase 1: 发送破冰消息 -> %s", name)
-                ok = self.chatter.send_message(icebreaker)
-                if not ok:
-                    self._logger.warning("Phase 1: 破冰消息发送失败 -> %s", name)
-                random_delay(self.settings)
-
             approved_count += 1
-
-            # 回到聊天列表，再进招呼列表看还有没有
-            self.greeter.go_back_to_chat_list()
-            if not self.greeter.enter_sayhi_list():
-                self._logger.warning("Phase 1: 重新进入招呼列表失败")
-                break
-            time.sleep(0.8)
+            self._logger.info("Step A: 已通过 %s", name)
 
         self.greeter.go_back_to_chat_list()
-        self._logger.info("Phase 1: 完成，通过 %d 人", approved_count)
+        self._logger.info("Step A: 完成，通过 %d 人", approved_count)
 
     # ------------------------------------------------------------------
-    # Phase 2 — 回复有未读消息的好友
+    # Step B — 聊天列表统一扫描 + 处理
     # ------------------------------------------------------------------
 
-    def _phase2_reply_unread(self) -> None:
-        """回复有未读消息且在 friends.json 中的好友。
+    def _step_scan_and_process(self) -> None:
+        """从聊天列表顶部开始，逐屏扫描并当场处理每个需要操作的好友。
 
-        跳过 chat_round==0 的（本轮 Phase 1 刚通过的）以及 over limit 的。
+        处理逻辑：
+          - cr=0 → 发破冰（池 1），cr→1
+          - cr>=1 且有未读角标 → 发下一条（池 cr+1），cr+1
+          - status=done → 跳过
+
+        看到就处理，处理完退出对话框后继续往下翻。
+        seen_names 防止同一轮内重复处理同一个人。
         """
-        self.current_phase = Phase.CHATTING
+        self.current_phase = Phase.SCANNING
 
-        unread_queue = self._collect_unread_friends()
-        if not unread_queue:
-            self._logger.debug("Phase 2: 无待回复好友")
-            return
-
-        self._logger.info("Phase 2: 发现 %d 个有未读消息的好友", len(unread_queue))
-
-        for friend in unread_queue:
-            try:
-                self._process_one_reply(friend)
-                self.friends_processed_this_round += 1
-            except Exception:
-                self._logger.exception("Phase 2: 回复 %s 失败", friend["name"])
-                try:
-                    self.chatter.go_back_to_chat_list()
-                except Exception:
-                    pass
-
-        self._logger.info(
-            "Phase 2: 完成，处理了 %d 个好友", self.friends_processed_this_round
-        )
-
-    def _collect_unread_friends(self) -> list:
-        """Dump 聊天列表 hierarchy，收集所有有 unread_badge 且在 friends.json 中的好友。
-
-        按名字模糊匹配；跳过：
-          - chat_round == 0（本轮 Phase 1 新通过）
-          - chat_round >= S（超过最大轮数）
-          - status in (done, failed)
-        """
-        try:
-            xml = self.driver.d.dump_hierarchy()
-        except Exception:
-            self._logger.warning("Phase 2: dump hierarchy 失败")
-            return []
-
-        root = ET.fromstring(xml)
         row_rid = self.chatter._get_rid("chat_list", "chat_row")
         name_rid = self.chatter._get_rid("chat_list", "chat_row_name")
         unread_rid = self.chatter._get_rid("chat_list", "chat_unread_badge")
         ignore_names = set(self.settings.get("chat_ignore_names") or [])
 
         if not row_rid:
-            return []
+            self._logger.warning("Step B: 未配置 chat_row resourceId")
+            return
 
         all_friends = self.storage.get_all_friends()
-        unread_queue: list = []
+        if not all_friends:
+            self._logger.debug("Step B: friends.json 为空")
+            return
 
-        for node in root.iter():
-            if node.attrib.get("resource-id") != row_rid:
+        seen_names: set = set()
+        processed = 0
+
+        # 点击「消息」tab 回到列表顶部
+        self._scroll_to_top_of_chat_list()
+
+        for scroll in range(10):
+            try:
+                xml = self.driver.d.dump_hierarchy()
+            except Exception:
+                self._logger.debug("Step B: dump hierarchy 异常 scroll=%d", scroll)
+                time.sleep(0.5)
                 continue
 
-            row_name = ""
-            has_badge = False
-            for child in node.iter():
-                rid = child.attrib.get("resource-id", "")
-                if rid == unread_rid:
-                    has_badge = True
-                elif rid == name_rid:
-                    row_name = (child.attrib.get("text") or "").strip()
+            root = ET.fromstring(xml)
+            found_any_row = False
 
-            if not has_badge or not row_name:
-                continue
-            if row_name in ignore_names:
-                continue
-
-            # 模糊匹配 friends.json 中的好友
-            for uid, friend in all_friends.items():
-                fname = friend.get("name") or uid
-                if fname not in row_name:
+            for node in root.iter():
+                if node.attrib.get("resource-id") != row_rid:
                     continue
 
-                chat_round = int(friend.get("chat_round") or 0)
-                status = friend.get("status") or "accepted"
+                found_any_row = True
 
-                if status in ("done", "failed"):
+                row_name = ""
+                has_badge = False
+                for child in node.iter():
+                    rid = child.attrib.get("resource-id", "")
+                    if rid == unread_rid:
+                        has_badge = True
+                    elif rid == name_rid:
+                        row_name = (child.attrib.get("text") or "").strip()
+
+                if not row_name or row_name in ignore_names:
                     continue
-                if chat_round == 0:   # 本轮 Phase 1 新通过
-                    continue
-                if chat_round >= self.S:
+                if row_name in seen_names:
                     continue
 
-                unread_queue.append({
-                    "uid": uid,
-                    "name": fname,
-                    "chat_round": chat_round,
-                })
+                # 模糊匹配 friends.json 中的好友
+                matched = self._match_friend(all_friends, row_name)
+                if matched is None:
+                    continue
+
+                uid = matched["uid"]
+                fname = matched["name"]
+                status = matched.get("status") or "accepted"
+                cr = int(matched.get("chat_round") or 0)
+
+                # ---- 决定动作 ----
+                if status == "done":
+                    continue
+
+                if cr == 0:
+                    # 新通过的好友，发破冰
+                    action = "icebreaker"
+                elif has_badge and cr < self.S:
+                    # 有未读消息，发跟进
+                    action = "reply"
+                else:
+                    continue
+
+                # ---- 执行 ----
+                seen_names.add(row_name)
+                self._logger.info(
+                    "Step B: %s → %s (cr=%d)", row_name, action, cr
+                )
+
+                if not self.chatter.find_and_enter_chat(fname):
+                    self._logger.warning("Step B: 进入 %s 对话框失败", fname)
+                    continue
+
+                ok = False
+                if action == "icebreaker" and self._pool:
+                    msg = self._pool.get_message_for_round(1)
+                    ok = self.chatter.send_message(msg)
+                    if ok:
+                        self.storage.increment_chat_round(uid)
+                        processed += 1
+                        self._logger.info("Step B: 破冰已发送 → %s", fname)
+                elif action == "reply" and self._pool:
+                    pool_index = cr + 1
+                    msg = self._pool.get_message_for_round(pool_index)
+                    ok = self.chatter.send_message(msg)
+                    if ok:
+                        self.storage.increment_chat_round(uid)
+                        processed += 1
+                        self._logger.info(
+                            "Step B: 池%d 已发送 → %s", pool_index, fname
+                        )
+
+                if not ok:
+                    self._logger.warning("Step B: 消息发送失败 → %s", fname)
+
+                # 退出对话框，继续扫描
+                self.chatter.go_back_to_chat_list()
+                random_delay(self.settings)
+
+            # 当前屏没有找到任何聊天行（已滑到底），提前退出
+            if not found_any_row and scroll > 0:
+                self._logger.debug("Step B: scroll=%d 无聊天行，停止翻屏", scroll)
                 break
 
-        return unread_queue
+            # 下翻
+            if scroll < 9:
+                try:
+                    self.driver.swipe_scroll_down()
+                except Exception:
+                    self._logger.debug("Step B: 滚动异常", exc_info=True)
+                time.sleep(random.uniform(0.3, 0.6))
 
-    def _process_one_reply(self, friend: dict) -> None:
-        """对单个好友：进对话框 → 发消息 → chat_round+1 → back。"""
-        name = friend["name"]
-        uid = friend["uid"]
-        chat_round = friend["chat_round"]
+        self.friends_processed_this_round += processed
+        self._logger.info("Step B: 完成，处理了 %d 个好友", processed)
 
-        self._logger.info("Phase 2: 回复 %s (chat_round=%d)", name, chat_round)
+    # ------------------------------------------------------------------
+    # Step B 辅助方法
+    # ------------------------------------------------------------------
 
-        if not self.chatter.find_and_enter_chat(name):
-            self._logger.warning("Phase 2: 进入 %s 对话框失败", name)
+    def _scroll_to_top_of_chat_list(self) -> None:
+        """点击底部「消息」tab 使聊天列表回到顶部。"""
+        chat_entry_text = self.chatter._get_text("chat_list", "chat_entry")
+        if not chat_entry_text:
             return
+        try:
+            xml = self.driver.d.dump_hierarchy()
+            root = ET.fromstring(xml)
+            for node in root.iter():
+                if (node.attrib.get("text") or "").strip() == chat_entry_text:
+                    b = parse_bounds(node.attrib.get("bounds", ""))
+                    if b:
+                        cx = (b[0] + b[2]) // 2
+                        cy = (b[1] + b[3]) // 2
+                        self.driver.random_click_xy(cx, cy)
+                        time.sleep(random.uniform(0.3, 0.6))
+                        return
+        except Exception:
+            self._logger.debug("Step B: 回到顶部失败", exc_info=True)
 
-        # 消息池索引：chat_round + 1（破冰是池 1，第 1 次回复是池 2）
-        pool_index = chat_round + 1
-        sent = False
-        if self._pool:
-            msg = self._pool.get_message_for_round(pool_index)
-            self._logger.info("Phase 2: 发送池 %d -> %s", pool_index, name)
-            sent = self.chatter.send_message(msg)
-
-        if not sent and self._pool:
-            self._logger.warning("Phase 2: 消息发送失败，不增加轮次 -> %s", name)
-            return
-
-        # 写入 friends.json
-        self.storage.increment_chat_round(uid)
-        random_delay(self.settings)
-        self.chatter.go_back_to_chat_list()
+    def _match_friend(self, all_friends: dict, row_name: str) -> Optional[dict]:
+        """在 friends.json 中模糊匹配聊天列表行名。返回含 uid/name 的 dict 或 None。"""
+        for uid, friend in all_friends.items():
+            fname = friend.get("name") or uid
+            if fname in row_name:
+                return {"uid": uid, "name": fname, **friend}
+        return None
 
     # ------------------------------------------------------------------
     # Phase 3 — 关注 + 互关检测 + 邀请 + 拉黑

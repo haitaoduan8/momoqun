@@ -3,6 +3,7 @@ uvicorn
 pyyaml
 pyinstaller
 uiautomator2
+adbutils
 opencv-python
 numpy
 flet==0.28.3
