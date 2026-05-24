@@ -89,24 +89,26 @@ class DeviceList:
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
-                                ft.Text(name, size=15, weight="bold", color=TEXT),
-                                ft.Text(ser, size=12, color=TEXT_MUTED),
-                            ], spacing=10),
+                                ft.Row([
+                                    ft.Text(name, size=15, weight="bold", color=TEXT),
+                                    ft.Text(ser, size=12, color=TEXT_MUTED),
+                                ], spacing=10),
+                                ft.Row([
+                                    _ctrl_btn("开始", lambda e, s=ser: self._act("start", s),
+                                              color=SUCCESS),
+                                    _ctrl_btn("暂停", lambda e, s=ser: self._act("pause", s),
+                                              color=WARNING),
+                                    _ctrl_btn("继续", lambda e, s=ser: self._act("resume", s),
+                                              color=ACCENT),
+                                    _ctrl_btn("删除设备", lambda e, s=ser: self._act("remove", s),
+                                              color=DANGER),
+                                ], spacing=6),
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                             ft.Row([
                                 ft.Text(sl, size=13, color=sc),
                                 ft.Text(info, size=12, color=TEXT_SECONDARY),
                             ], spacing=14),
-                            ft.Row([
-                                _ctrl_btn("开始", lambda e, s=ser: self._act("start", s),
-                                          color=SUCCESS),
-                                _ctrl_btn("暂停", lambda e, s=ser: self._act("pause", s),
-                                          color=WARNING),
-                                _ctrl_btn("继续", lambda e, s=ser: self._act("resume", s),
-                                          color=ACCENT),
-                                _ctrl_btn("删除设备", lambda e, s=ser: self._act("remove", s),
-                                          color=DANGER),
-                            ], spacing=6),
-                        ], spacing=8),
+                        ], spacing=10),
                         padding=20,
                     ),
                     color=BG_CARD,
