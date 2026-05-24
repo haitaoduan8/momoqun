@@ -345,10 +345,12 @@ class SessionRound:
             self._logger.debug("Step B: 回到顶部失败", exc_info=True)
 
     def _match_friend(self, all_friends: dict, row_name: str) -> Optional[dict]:
-        """在 friends.json 中模糊匹配聊天列表行名。返回含 uid/name 的 dict 或 None。"""
+        """在 friends.json 中模糊匹配聊天列表行名。双向子串匹配。"""
         for uid, friend in all_friends.items():
             fname = friend.get("name") or uid
-            if fname in row_name:
+            if fname == "unknown":
+                continue
+            if fname in row_name or row_name in fname:
                 return {"uid": uid, "name": fname, **friend}
         return None
 

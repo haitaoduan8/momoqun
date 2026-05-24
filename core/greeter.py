@@ -128,48 +128,76 @@ class GreetingScanner:
             return False
 
     def _find_name_in_sayhi_item(self, accept_el) -> Optional[str]:
-        """在招呼列表条目中，从「通过」按钮所在容器向上查找对方昵称。"""
+        """在招呼列表条目中，顺着「通过」按钮往 DOM 树上找父级容器，取容器内第一个文本节点作为昵称。"""
         try:
             xml = self.driver.d.dump_hierarchy()
             root = ET.fromstring(xml)
 
-            # 获取「通过」按钮的 bounds
+            # 找到「通过」按钮在 DOM 中的节点
             el_info = accept_el.info
             if not el_info:
                 return None
+            el_rid = el_info.get("resourceName") or ""
             el_bounds = el_info.get("bounds") or {}
-            el_left = el_bounds.get("left", 0)
             el_top = el_bounds.get("top", 0)
             el_bottom = el_bounds.get("bottom", 0)
+            el_left = el_bounds.get("left", 0)
+            el_right = el_bounds.get("right", 0)
 
+            btn_cy = (el_top + el_bottom) // 2
+
+            # 策略 1：找 DOM 中与按钮同行、在按钮左侧的文本节点
             best_name = None
-            best_area = 0
-
+            best_left = 99999
             for node in root.iter():
                 txt = (node.attrib.get("text") or "").strip()
-                if not txt:
+                if not txt or len(txt) > 20:
                     continue
                 b = parse_bounds(node.attrib.get("bounds", ""))
                 if b is None:
                     continue
                 nl, nt, nr, nb = b
-                # 候选节点应该与「通过」按钮在同一行（垂直方向接近）
                 node_cy = (nt + nb) // 2
-                btn_cy = (el_top + el_bottom) // 2
                 if abs(node_cy - btn_cy) > 100:
                     continue
-                # 名字应该在按钮左侧
-                if nr >= el_left:
+                if nr > el_left + 30:   # 必须在按钮左侧
                     continue
-                # 取同行中最左/面积最大的文本（通常是昵称）
-                area = (nr - nl) * (nb - nt)
-                txt_len = len(txt)
-                # 优先选文本长度 2-15（昵称范围）
-                if 1 <= txt_len <= 20 and area > best_area:
-                    best_area = area
+                if nl < best_left:
+                    best_left = nl
                     best_name = txt
 
-            return best_name
+            if best_name:
+                return best_name
+
+            # 策略 2：向上找父级容器，取容器内 bounds 最靠上/靠左的第一个短文本
+            if el_rid:
+                for node in root.iter():
+                    if node.attrib.get("resource-id", "") != el_rid:
+                        continue
+                    # 找到按钮节点，往上找父级
+                    parent = node
+                    for _ in range(5):
+                        prev = parent
+                        for p in root.iter():
+                            for c in p:
+                                if c is parent:
+                                    parent = p
+                                    break
+                        if prev is parent:
+                            break
+                        # 在父级容器里找名字
+                        texts = []
+                        for child in parent.iter():
+                            t = (child.attrib.get("text") or "").strip()
+                            cb = parse_bounds(child.attrib.get("bounds", ""))
+                            if t and 1 <= len(t) <= 20 and cb:
+                                texts.append((cb[0], t))  # (left, text)
+                        texts.sort()
+                        if texts:
+                            return texts[0][1]
+                    break
+
+            return None
         except Exception:
             self._logger.debug("_find_name_in_sayhi_item 异常", exc_info=True)
             return None

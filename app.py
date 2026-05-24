@@ -96,7 +96,8 @@ def main():
 
     # 日志文件（console=False 时无控制台，写文件用于诊断）
     _log_file = os.path.join(BASE_DIR, "momoqun.log")
-    _log_fh = logging.FileHandler(_log_file, encoding="utf-8", mode="w")
+    _log_stream = open(_log_file, "w", encoding="utf-8", buffering=1)  # 行缓冲，立即落盘
+    _log_fh = logging.StreamHandler(_log_stream)
     _log_fh.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
