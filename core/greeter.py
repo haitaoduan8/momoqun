@@ -94,8 +94,9 @@ class GreetingScanner:
                         except ValueError:
                             pass
 
-            self._logger.debug("scan_badge: 找到「%s」但未解析到数字", entry_text)
-            return 0
+            # 找到了「收到的招呼」入口但角标读不出数字 → 至少有 1 个新招呼
+            self._logger.info("scan_badge: 找到「%s」但未解析到数字，假定至少 1 个", entry_text)
+            return 1
         except Exception:
             logging.exception("scan_badge 异常")
             return 0
