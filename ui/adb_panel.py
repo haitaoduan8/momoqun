@@ -40,10 +40,11 @@ def _outline_btn(text, on_click, height=34):
 
 
 class ADBPanel:
-    def __init__(self):
+    def __init__(self, device_list=None):
         self.status = ft.Ref[ft.Text]()
         self.addr = ft.Ref[ft.TextField]()
         self.dev_list = ft.Ref[ft.Column]()
+        self._device_list = device_list  # DeviceList 引用，用于添加后刷新
 
     def build(self):
         return ft.Card(
@@ -147,6 +148,8 @@ class ADBPanel:
             r = requests.post(f"{API}/api/devices/add", json={"serial": ser, "name": ser}, timeout=10)
             d = r.json()
             self._status(f"{ser} 已添加" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
+            if d.get("ok") and self._device_list:
+                self._device_list.refresh()
         except Exception as ex:
             self._status(str(ex), DANGER)
 

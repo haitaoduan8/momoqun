@@ -12,6 +12,22 @@ from ui.theme import (
 API = "http://localhost:5100"
 
 
+def _ctrl_btn(text, on_click, color=ACCENT, height=30):
+    """设备控制按钮 — 小尺寸圆角文字按钮。"""
+    return ft.ElevatedButton(
+        text=text,
+        on_click=on_click,
+        bgcolor=color,
+        color="#ffffff",
+        height=height,
+        style=ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
+            padding=ft.padding.symmetric(horizontal=10),
+            text_style=ft.TextStyle(size=12),
+        ),
+    )
+
+
 class DeviceList:
     def __init__(self, page: ft.Page):
         self.page = page
@@ -35,15 +51,22 @@ class DeviceList:
     def will_unmount(self):
         self.running = False
 
+    def refresh(self):
+        """外部触发刷新（添加设备后立即调用）。"""
+        threading.Thread(target=self._fetch_and_render, daemon=True).start()
+
     def _poll(self):
         while self.running:
-            try:
-                r = requests.get(f"{API}/api/devices", timeout=5)
-                if r.ok and isinstance(r.json(), list):
-                    self._render(r.json())
-            except Exception:
-                pass
+            self._fetch_and_render()
             time.sleep(3)
+
+    def _fetch_and_render(self):
+        try:
+            r = requests.get(f"{API}/api/devices", timeout=5)
+            if r.ok and isinstance(r.json(), list):
+                self._render(r.json())
+        except Exception:
+            pass
 
     def _render(self, devs):
         cards = []
@@ -74,37 +97,15 @@ class DeviceList:
                                 ft.Text(info, size=12, color=TEXT_SECONDARY),
                             ], spacing=14),
                             ft.Row([
-                                ft.IconButton(
-                                    icon=ft.Icons.PLAY_ARROW, icon_color=SUCCESS,
-                                    tooltip="启动",
-                                    on_click=lambda e, s=ser: self._act("start", s),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.PAUSE, icon_color=WARNING,
-                                    tooltip="暂停",
-                                    on_click=lambda e, s=ser: self._act("pause", s),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.STOP, icon_color=DANGER,
-                                    tooltip="停止",
-                                    on_click=lambda e, s=ser: self._act("stop", s),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.REPLAY, icon_color=ACCENT,
-                                    tooltip="继续",
-                                    on_click=lambda e, s=ser: self._act("resume", s),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.BUILD, icon_color=TEXT_SECONDARY,
-                                    tooltip="初始化",
-                                    on_click=lambda e, s=ser: self._init_dev(s),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.Icons.DELETE_OUTLINE, icon_color=DANGER,
-                                    tooltip="移除设备",
-                                    on_click=lambda e, s=ser: self._act("remove", s),
-                                ),
-                            ], spacing=4),
+                                _ctrl_btn("开始", lambda e, s=ser: self._act("start", s),
+                                          color=SUCCESS),
+                                _ctrl_btn("暂停", lambda e, s=ser: self._act("pause", s),
+                                          color=WARNING),
+                                _ctrl_btn("继续", lambda e, s=ser: self._act("resume", s),
+                                          color=ACCENT),
+                                _ctrl_btn("删除设备", lambda e, s=ser: self._act("remove", s),
+                                          color=DANGER),
+                            ], spacing=6),
                         ], spacing=8),
                         padding=20,
                     ),
@@ -133,9 +134,13 @@ class DeviceList:
             pass
 
     def _act(self, action, ser):
-        threading.Thread(target=lambda: requests.post(
-            f"{API}/api/devices/{action}", json={"serial": ser}, timeout=10
-        ), daemon=True).start()
+        def _do():
+            try:
+                requests.post(f"{API}/api/devices/{action}", json={"serial": ser}, timeout=10)
+            except Exception:
+                pass
+            self._fetch_and_render()
+        threading.Thread(target=_do, daemon=True).start()
 
     def _init_dev(self, ser):
         threading.Thread(target=lambda: requests.post(

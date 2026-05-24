@@ -63,9 +63,9 @@ def main(page: ft.Page):
     page.on_window_destroy = lambda _: _cleanup()
 
     # ── 组件 ──
-    adb = ADBPanel()
-    cfg = ConfigPanel()
     dev = DeviceList(page)
+    adb = ADBPanel(device_list=dev)
+    cfg = ConfigPanel()
     log = LogArea()
 
     cfg.load()
