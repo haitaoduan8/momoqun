@@ -1,1 +1,16 @@
-{}
+{
+  "纳兰": {
+    "uid": "纳兰",
+    "chat_round": 7,
+    "last_action_at": "2026-05-26T15:35:47",
+    "status": "followed",
+    "name": "纳兰"
+  },
+  "艾维": {
+    "uid": "艾维",
+    "chat_round": 4,
+    "last_action_at": "2026-05-26T15:33:46",
+    "status": "done",
+    "name": "艾维"
+  }
+}
