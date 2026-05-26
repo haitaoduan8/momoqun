@@ -26,14 +26,34 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller momoqun.spec
 
-      - name: Check output
+      - name: Package EXE as ZIP
         shell: pwsh
         run: |
-          echo "=== Build output ==="
-          Get-ChildItem dist\momoqun\ -Recurse
+          Compress-Archive -Path dist\momoqun\* -DestinationPath momoqun-Windows.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: momoqun-Windows
-          path: dist/momoqun/
+          path: momoqun-Windows.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: momoqun-Windows-latest
+          tag_name: latest
+          files: momoqun-Windows.zip
+          prerelease: false
+          body: |
+            ## momoqun Windows EXE
+
+            自动构建于 ${{ github.sha }}。
+
+            ### 使用方法
+            1. 下载 `momoqun-Windows.zip`
+            2. 解压到任意目录
+            3. 运行 `momoqun.exe`
+            4. 手机通过 USB 连接电脑，开启 USB 调试
+            5. 浏览器打开 `http://localhost:8550` 进入管理界面
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

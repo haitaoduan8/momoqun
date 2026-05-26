@@ -175,6 +175,22 @@ class StorageHandler:
             self._write_all(friends)
             return cur
 
+    def rename_uid(self, old_uid: str, new_uid: str) -> bool:
+        """重命名好友的 uid（key）。同时更新条目内的 uid 字段。"""
+        with self._lock:
+            friends = self._read_all()
+            if old_uid not in friends:
+                return False
+            if new_uid in friends and new_uid != old_uid:
+                # 合并：新 uid 已存在，保留旧条目的数据，覆盖 name 等字段
+                friends[new_uid].update(friends[old_uid])
+                del friends[old_uid]
+            else:
+                friends[new_uid] = friends.pop(old_uid)
+            friends[new_uid]["uid"] = new_uid
+            self._write_all(friends)
+            return True
+
     def count_by_status(self) -> Dict[str, int]:
         counters = {s: 0 for s in ALLOWED_STATUS}
         counters["total"] = 0

@@ -53,6 +53,8 @@ a = Analysis(
         'core.greeter',
         'core.group_invite',
         'core.message_pool',
+        'core.traversal',
+        'core.chat_flow',
         'data',
         'data.storage',
         'device_manager',

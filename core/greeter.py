@@ -236,22 +236,39 @@ class GreetingScanner:
             return None
 
     def go_back_to_chat_list(self) -> bool:
-        """从任意界面按 back 返回到聊天列表。最多 3 次。"""
+        """从任意界面按 back 返回到聊天列表。最多 4 次。
+
+        同时检测 chat_row 存在 且 accept_button 不存在，
+        以区分主聊天列表和招呼子页面（两者都有 chat_row）。
+        """
         try:
             row_rid = self._get_rid("chat_list", "chat_row")
-            for i in range(3):
+            accept_rid = self._get_rid("buttons", "accept_button")
+            for i in range(4):
                 try:
                     self.driver.d.press("back")
                 except Exception:
                     self._logger.debug("back 按键异常", exc_info=True)
                 time.sleep(random.uniform(0.5, 1.0))
+                self.driver.wait_ui_stable(max_wait=1.0)
                 try:
                     xml = self.driver.d.dump_hierarchy()
                     if row_rid and row_rid in xml:
+                        # 招呼子页面也有 chat_row，但还有 accept_button
+                        if accept_rid and accept_rid in xml:
+                            self._logger.debug(
+                                "back 后仍在招呼子页面（检测到 accept_button），继续 back"
+                            )
+                            continue
+                        self._logger.info(
+                            "go_back_to_chat_list: 已回到主聊天列表 (尝试 %d 次)", i + 1
+                        )
                         return True
                 except Exception:
-                    self._logger.debug("dump hierarchy 检测 chat_row 异常", exc_info=True)
-            self._logger.warning("go_back_to_chat_list: 多次 back 后仍未检测到 chat_row")
+                    self._logger.debug("dump hierarchy 检测异常", exc_info=True)
+            self._logger.warning(
+                "go_back_to_chat_list: 多次 back 后仍未回到主聊天列表"
+            )
             return False
         except Exception:
             logging.exception("go_back_to_chat_list 异常")

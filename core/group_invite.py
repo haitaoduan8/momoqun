@@ -445,12 +445,6 @@ class GroupInviter:
         """
         self._logger.info("select_friend: 查找 %s", friend_name)
 
-        # 先切到「好友」tab
-        for tab_text in ["好友", "最近"]:
-            if self._click_text(tab_text):
-                time.sleep(random.uniform(0.3, 0.6))
-                break
-
         # 查找好友（可能需滚动）
         for scroll in range(8):
             xml = self.driver.d.dump_hierarchy()

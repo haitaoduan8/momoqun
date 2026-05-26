@@ -240,10 +240,37 @@ class OneOnOneChatter:
         return self._pool.next_message()
 
     def go_back_to_chat_list(self) -> bool:
-        """从对话框返回聊天列表。"""
+        """从对话框返回聊天列表。
+
+        按下 back 后验证是否仍在聊天页（检测 send_button/input_box），
+        若是则再按一次 back。
+        """
         try:
             self.driver.d.press("back")
             time.sleep(random.uniform(0.5, 1.0))
+            self.driver.wait_ui_stable(max_wait=1.0)
+
+            # 验证是否已离开聊天页：若 send_button 或 input_box 仍在，说明还在聊天页
+            send_rid = self._get_rid("buttons", "send_button")
+            input_rid = self._get_rid("buttons", "input_box")
+            try:
+                xml = self.driver.d.dump_hierarchy()
+                still_on_chat = False
+                if send_rid and send_rid in xml:
+                    still_on_chat = True
+                if input_rid and input_rid in xml:
+                    still_on_chat = True
+                if still_on_chat:
+                    self._logger.warning(
+                        "go_back_to_chat_list: 仍在聊天页（检测到 send_button/input_box），再次 back"
+                    )
+                    self.driver.d.press("back")
+                    time.sleep(random.uniform(0.5, 1.0))
+            except Exception:
+                self._logger.debug(
+                    "go_back_to_chat_list: 页面验证异常", exc_info=True
+                )
+
             return True
         except Exception:
             logging.exception("go_back_to_chat_list 异常")

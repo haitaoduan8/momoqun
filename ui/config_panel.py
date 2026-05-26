@@ -53,33 +53,74 @@ class ConfigPanel:
         self.pool_count = ft.Ref[ft.TextField]()
         self.strategy = ft.Ref[ft.Dropdown]()
         self.pools_container = ft.Ref[ft.Column]()
+        self.direct_mode_switch = ft.Ref[ft.Switch]()
         self._pool_cnt = 5
+        self._all_inputs: list = []  # 记录所有需联动禁用的输入控件
 
         for k in [
             "group_name", "chat_rounds_before_follow", "max_chat_rounds",
             "round_end_wait_s", "chat_round_wait_s", "greet_scan_interval_s",
             "invite_back_message", "max_consecutive_errors",
-            "reply_min", "reply_max",
+            "reply_min", "reply_max", "huiguan_message_round",
         ]:
             self.fields[k] = ft.Ref[ft.TextField]()
         for i in range(1, MAX_POOLS + 1):
             self.pools[i] = ft.Ref[ft.TextField]()
 
     def build(self):
+        self._all_inputs = []
+
+        def _make_field(label, ref, val="", hint="", multiline=False, height=38):
+            tf = ft.TextField(
+                ref=ref,
+                value=val,
+                hint_text=hint,
+                border_color=BORDER,
+                bgcolor=BG_ELEVATED,
+                color=TEXT,
+                text_size=13,
+                height=height if not multiline else 64,
+                multiline=multiline,
+                expand=True,
+                content_padding=ft.Padding(left=10, top=7, right=10, bottom=7),
+            )
+            self._all_inputs.append(tf)
+            return ft.Row([
+                ft.Text(label, size=13, color=TEXT_SECONDARY, width=90),
+                tf,
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        dm_switch = ft.Switch(
+            ref=self.direct_mode_switch,
+            value=False,
+            active_color=SUCCESS,
+            on_change=self._on_direct_mode_changed,
+        )
+
         form = ft.Column([
             ft.Text("配置", size=15, weight="bold", color=TEXT),
             ft.Divider(height=1, color=BORDER),
 
-            _field("群聊名称", self.fields["group_name"], "我的群聊"),
-            _field("聊N轮后关注", self.fields["chat_rounds_before_follow"], "3"),
-            _field("最大聊天轮数", self.fields["max_chat_rounds"], "10"),
-            _field("轮次间隔(秒)", self.fields["round_end_wait_s"], "10"),
-            _field("回复等待(秒)", self.fields["chat_round_wait_s"], "30"),
-            _field("招呼扫描间隔", self.fields["greet_scan_interval_s"], "5"),
-            _field("回关邀请话术", self.fields["invite_back_message"], "互关拉你进群"),
-            _field("最大连续错误", self.fields["max_consecutive_errors"], "5"),
-            _field("回复间隔(秒)", self.fields["reply_min"], "1"),
-            _field("回复间隔~", self.fields["reply_max"], "3"),
+            # 直接拉群开关（放在最上面）
+            ft.Row([
+                ft.Text("直接拉群模式", size=13, color=TEXT_SECONDARY, width=90),
+                dm_switch,
+                ft.Text("开启后仅通过招呼→邀请进群→拉黑", size=12, color=TEXT_MUTED),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Divider(height=1, color=BORDER),
+
+            _make_field("群聊名称", self.fields["group_name"], "我的群聊"),
+            _make_field("聊N轮后关注", self.fields["chat_rounds_before_follow"], "3"),
+            _make_field("最大聊天轮数", self.fields["max_chat_rounds"], "10"),
+            _make_field("轮次间隔(秒)", self.fields["round_end_wait_s"], "10"),
+            _make_field("回复等待(秒)", self.fields["chat_round_wait_s"], "30"),
+            _make_field("招呼扫描间隔", self.fields["greet_scan_interval_s"], "5"),
+            _make_field("回关话术发送时机(轮)", self.fields["huiguan_message_round"], "3",
+                       hint="设0不发送回关话术"),
+            _make_field("回关邀请话术", self.fields["invite_back_message"], "互关拉你进群"),
+            _make_field("最大连续错误", self.fields["max_consecutive_errors"], "5"),
+            _make_field("回复间隔(秒)", self.fields["reply_min"], "1"),
+            _make_field("回复间隔~", self.fields["reply_max"], "3"),
 
             ft.Divider(height=1, color=BORDER),
             ft.Text("聊天策略", size=14, weight="bold", color=TEXT),
@@ -125,6 +166,10 @@ class ConfigPanel:
 
         self._rebuild_pools()
 
+        # 记录 strategy dropdown 和 pool 控件用于联动禁用
+        self._all_inputs.append(self.strategy.current)
+        self._all_inputs.append(self.pool_count.current)
+
         return ft.Card(
             content=ft.Container(
                 content=ft.Container(
@@ -138,6 +183,27 @@ class ConfigPanel:
             elevation=0,
             margin=10,
         )
+
+    def _on_direct_mode_changed(self, e):
+        """直接拉群开关切换时禁用/启用所有配置项。"""
+        if e is not None:
+            enabled = not e.control.value
+        else:
+            try:
+                enabled = not self.direct_mode_switch.current.value
+            except Exception:
+                enabled = True
+        for ctrl in self._all_inputs:
+            try:
+                ctrl.disabled = not enabled
+                ctrl.update()
+            except Exception:
+                pass
+        try:
+            self.strategy.current.disabled = not enabled
+            self.strategy.current.update()
+        except Exception:
+            pass
 
     # ─── 消息池动态 ───
 
@@ -198,6 +264,7 @@ class ConfigPanel:
                 "greet_scan_interval_s": ("greet_scan_interval_s", "5"),
                 "invite_back_message": ("invite_back_message", ""),
                 "max_consecutive_errors": ("max_consecutive_errors", "5"),
+                "huiguan_message_round": ("huiguan_message_round", "3"),
             }
 
             for fk, (ck, dv) in mapping.items():
@@ -205,6 +272,14 @@ class ConfigPanel:
                 if v is not None:
                     self.fields[fk].current.value = str(v)
                     self.fields[fk].current.update()
+
+            # 直接拉群开关
+            dm = cfg.get("direct_group_mode", False)
+            self.direct_mode_switch.current.value = bool(dm)
+            self.direct_mode_switch.current.update()
+            # 触发联动：如果开启直接拉群，禁用其他项
+            if dm:
+                self._on_direct_mode_changed(None)
 
             ri = cfg.get("reply_interval", {})
             self.fields["reply_min"].current.value = str(ri.get("min", "1"))
@@ -249,6 +324,8 @@ class ConfigPanel:
                 "greet_scan_interval_s": float(self._g("greet_scan_interval_s", "5")),
                 "invite_back_message": self._g("invite_back_message"),
                 "max_consecutive_errors": int(self._g("max_consecutive_errors", "5")),
+                "huiguan_message_round": int(self._g("huiguan_message_round", "3")),
+                "direct_group_mode": self._dm(),
                 "reply_interval": {
                     "min": float(self._g("reply_min", "1")),
                     "max": float(self._g("reply_max", "3")),
@@ -259,7 +336,7 @@ class ConfigPanel:
                 "chat_list_scan_interval": {"min": 2.0, "max": 4.0},
                 "click_offset": {"x": 5, "y": 5},
                 "delay": {"min": 0.3, "max": 0.8},
-                "chat_ignore_names": ["互动通知", "订阅内容", "陌陌", "超级抢车位", "猜你喜欢", "谁看过我"],
+                "chat_ignore_names": ["收到的招呼", "互动通知", "订阅内容", "陌陌", "超级抢车位", "猜你喜欢", "谁看过我"],
             }
             for i in range(1, self._pool_cnt + 1):
                 msgs = [m.strip() for m in self.pools[i].current.value.split("\n") if m.strip()]
@@ -277,6 +354,12 @@ class ConfigPanel:
             return self.fields[k].current.value or d
         except Exception:
             return d
+
+    def _dm(self):
+        try:
+            return self.direct_mode_switch.current.value
+        except Exception:
+            return False
 
     def _st(self, msg, color):
         try:

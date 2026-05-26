@@ -60,7 +60,9 @@ class SessionRound:
         self.settings = settings
         self.storage = storage
 
+        # 保留 greeter 用于招呼处理（Phase 1）
         self.greeter = GreetingScanner(driver, elements, settings)
+        # 保留 chatter 用于 _scroll_to_top 等辅助方法
         self.chatter = OneOnOneChatter(driver, elements, settings, storage)
         self.inviter = GroupInviter(driver, elements, settings)
 
@@ -69,6 +71,16 @@ class SessionRound:
         except Exception:
             logging.exception("SessionRound 消息池初始化失败")
             self._pool = None
+
+        # 初始化 ChatFlow（遍历式回复引擎）
+        from core.chat_flow import ChatFlow
+        self.chat_flow = ChatFlow(
+            driver=driver,
+            elements=elements,
+            settings=settings,
+            pool=self._pool,
+            storage=storage,
+        )
 
         # 配置参数
         self.N: int = max(1, int(settings.get("chat_rounds_before_follow", 3)))
@@ -90,9 +102,11 @@ class SessionRound:
         """执行一整轮：Step A → Step B → Phase 3 → Phase 4。"""
         self.round_number += 1
         self.friends_processed_this_round = 0
+        direct_mode = self.settings.get("direct_group_mode", False)
 
         self._logger.info("=" * 40)
-        self._logger.info("第 %d 轮开始", self.round_number)
+        self._logger.info("第 %d 轮开始%s", self.round_number,
+                          " [直接拉群模式]" if direct_mode else "")
         self._logger.info("=" * 40)
 
         try:
@@ -100,10 +114,11 @@ class SessionRound:
         except Exception:
             self._logger.exception("Step A 异常，继续 Step B")
 
-        try:
-            self._step_scan_and_process()
-        except Exception:
-            self._logger.exception("Step B 异常，继续 Phase 3")
+        if not direct_mode:
+            try:
+                self._step_scan_and_process()
+            except Exception:
+                self._logger.exception("Step B 异常，继续 Phase 3")
 
         try:
             self._phase3_follow_and_mutual()
@@ -155,7 +170,35 @@ class SessionRound:
             approved_count += 1
             self._logger.info("Step A: 已通过 %s", name)
 
-        self.greeter.go_back_to_chat_list()
+        back_ok = self.greeter.go_back_to_chat_list()
+        if not back_ok:
+            self._logger.warning("Step A: go_back_to_chat_list 返回失败，尝试额外恢复")
+            try:
+                self.driver.d.press("back")
+                time.sleep(random.uniform(0.5, 1.0))
+                self.driver.wait_ui_stable(max_wait=1.0)
+            except Exception:
+                self._logger.debug("Step A: 额外 back 恢复异常", exc_info=True)
+
+        # 防御性验证：确认不在招呼子页面
+        accept_rid = self.greeter._get_rid("buttons", "accept_button")
+        row_rid = self.greeter._get_rid("chat_list", "chat_row")
+        try:
+            xml = self.driver.d.dump_hierarchy()
+            if accept_rid and accept_rid in xml:
+                self._logger.error(
+                    "Step A: 恢复后仍在招呼子页面（检测到 accept_button），"
+                    "Step B 可能扫描异常"
+                )
+            elif row_rid and row_rid in xml:
+                self._logger.info("Step A: 已验证回到主聊天列表")
+            else:
+                self._logger.warning(
+                    "Step A: 无法确认当前页面状态（无 chat_row 无 accept_button）"
+                )
+        except Exception:
+            self._logger.debug("Step A: 页面验证异常", exc_info=True)
+
         self._logger.info("Step A: 完成，通过 %d 人", approved_count)
 
     # ------------------------------------------------------------------
@@ -163,162 +206,38 @@ class SessionRound:
     # ------------------------------------------------------------------
 
     def _step_scan_and_process(self) -> None:
-        """从聊天列表顶部开始，逐屏扫描并当场处理每个需要操作的好友。
+        """使用 TraversalRunner + ChatListUiSource 遍历聊天列表，
+        对每个待处理的好友执行回复（破冰/跟进）。
 
-        处理逻辑：
-          - cr=0 → 发破冰（池 1），cr→1
-          - cr>=1 且有未读角标 → 发下一条（池 cr+1），cr+1
-          - status=done → 跳过
-
-        看到就处理，处理完退出对话框后继续往下翻。
-        seen_names 防止同一轮内重复处理同一个人。
+        基于 Momo_Project 的不重不漏遍历架构重写。
         """
         self.current_phase = Phase.SCANNING
 
-        row_rid = self.chatter._get_rid("chat_list", "chat_row")
-        name_rid = self.chatter._get_rid("chat_list", "chat_row_name")
-        unread_rid = self.chatter._get_rid("chat_list", "chat_unread_badge")
-        ignore_names = set(self.settings.get("chat_ignore_names") or [])
-
-        if not row_rid:
-            self._logger.warning("Step B: 未配置 chat_row resourceId")
-            return
-
         all_friends = self.storage.get_all_friends()
-        if not all_friends:
-            self._logger.debug("Step B: friends.json 为空")
-            return
-
-        # 诊断日志：当前 friends.json 中的所有好友状态
         self._logger.info(
             "Step B: friends.json 共 %d 个好友: %s",
-            len(all_friends),
+            len(all_friends or {}),
             [(f.get("name", uid), f.get("chat_round", "?"), f.get("status", "?"))
-             for uid, f in all_friends.items()],
+             for uid, f in (all_friends or {}).items()],
         )
 
-        seen_names: set = set()
-        processed = 0
+        if not self.chat_flow.open_chat_list():
+            self._logger.warning("Step B: 进入聊天列表失败")
+            return
 
-        # 点击「消息」tab 回到列表顶部
-        self._scroll_to_top_of_chat_list()
+        report = self.chat_flow.reply_all_new(
+            round_=self.round_number,
+            gate=None,
+        )
 
-        for scroll in range(10):
-            try:
-                xml = self.driver.d.dump_hierarchy()
-            except Exception:
-                self._logger.debug("Step B: dump hierarchy 异常 scroll=%d", scroll)
-                time.sleep(0.5)
-                continue
-
-            root = ET.fromstring(xml)
-            found_any_row = False
-            screen_rows = []  # 诊断：当前屏所有聊天行
-
-            for node in root.iter():
-                if node.attrib.get("resource-id") != row_rid:
-                    continue
-
-                found_any_row = True
-
-                row_name = ""
-                has_badge = False
-                for child in node.iter():
-                    rid = child.attrib.get("resource-id", "")
-                    if rid == unread_rid:
-                        has_badge = True
-                    elif rid == name_rid:
-                        row_name = (child.attrib.get("text") or "").strip()
-
-                if not row_name or row_name in ignore_names:
-                    continue
-                if row_name in seen_names:
-                    screen_rows.append(f"({row_name}, 已处理)")
-                    continue
-
-                # 模糊匹配 friends.json 中的好友
-                matched = self._match_friend(all_friends, row_name)
-                if matched is None:
-                    screen_rows.append(f"({row_name}, 未匹配)")
-                    continue
-
-                uid = matched["uid"]
-                fname = matched["name"]
-                status = matched.get("status") or "accepted"
-                cr = int(matched.get("chat_round") or 0)
-
-                # ---- 决定动作 ----
-                if status == "done":
-                    screen_rows.append(f"({row_name}, done-跳过)")
-                    continue
-
-                if cr == 0:
-                    action = "icebreaker"
-                elif has_badge and cr < self.S:
-                    action = "reply"
-                else:
-                    screen_rows.append(
-                        f"({row_name}, cr={cr} badge={has_badge}-跳过)"
-                    )
-                    continue
-
-                # ---- 执行 ----
-                seen_names.add(row_name)
-                screen_rows.append(f"({row_name}, {action})")
-                self._logger.info(
-                    "Step B: %s → %s (cr=%d)", row_name, action, cr
-                )
-
-                if not self.chatter.find_and_enter_chat(fname):
-                    self._logger.warning("Step B: 进入 %s 对话框失败", fname)
-                    continue
-
-                ok = False
-                if action == "icebreaker" and self._pool:
-                    msg = self._pool.get_message_for_round(1)
-                    ok = self.chatter.send_message(msg)
-                    if ok:
-                        self.storage.increment_chat_round(uid)
-                        processed += 1
-                        self._logger.info("Step B: 破冰已发送 → %s", fname)
-                elif action == "reply" and self._pool:
-                    pool_index = cr + 1
-                    msg = self._pool.get_message_for_round(pool_index)
-                    ok = self.chatter.send_message(msg)
-                    if ok:
-                        self.storage.increment_chat_round(uid)
-                        processed += 1
-                        self._logger.info(
-                            "Step B: 池%d 已发送 → %s", pool_index, fname
-                        )
-
-                if not ok:
-                    self._logger.warning("Step B: 消息发送失败 → %s", fname)
-
-                # 退出对话框，继续扫描
-                self.chatter.go_back_to_chat_list()
-                random_delay(self.settings)
-
-            # 诊断：输出当前屏扫描结果
-            self._logger.info(
-                "Step B: scroll=%d 本屏行: %s", scroll, screen_rows
-            )
-
-            # 当前屏没有找到任何聊天行（已滑到底），提前退出
-            if not found_any_row and scroll > 0:
-                self._logger.debug("Step B: scroll=%d 无聊天行，停止翻屏", scroll)
-                break
-
-            # 下翻
-            if scroll < 9:
-                try:
-                    self.driver.swipe_scroll_down()
-                except Exception:
-                    self._logger.debug("Step B: 滚动异常", exc_info=True)
-                time.sleep(random.uniform(0.3, 0.6))
-
-        self.friends_processed_this_round += processed
-        self._logger.info("Step B: 完成，处理了 %d 个好友", processed)
+        self.friends_processed_this_round += len(report.processed)
+        self._logger.info(
+            "Step B: 完成，处理 %d 人，跳过已done %d，失败 %d，原因=%s",
+            len(report.processed),
+            report.skipped_already_done,
+            len(report.failed),
+            report.stopped_reason,
+        )
 
     # ------------------------------------------------------------------
     # Step B 辅助方法
@@ -340,18 +259,73 @@ class SessionRound:
                         cy = (b[1] + b[3]) // 2
                         self.driver.random_click_xy(cx, cy)
                         time.sleep(random.uniform(0.3, 0.6))
+                        self.driver.wait_ui_stable(max_wait=1.2)
+                        # 验证 chat_row 元素可见
+                        try:
+                            row_rid = self.chatter._get_rid("chat_list", "chat_row")
+                            xml2 = self.driver.d.dump_hierarchy()
+                            if row_rid and row_rid in xml2:
+                                self._logger.debug(
+                                    "Step B: 已回到聊天列表顶部，chat_row 可见"
+                                )
+                            else:
+                                self._logger.warning(
+                                    "Step B: 点击「消息」tab 后未检测到 chat_row，"
+                                    "页面可能未正确加载"
+                                )
+                        except Exception:
+                            self._logger.debug(
+                                "Step B: chat_row 验证异常", exc_info=True
+                            )
                         return
         except Exception:
             self._logger.debug("Step B: 回到顶部失败", exc_info=True)
 
     def _match_friend(self, all_friends: dict, row_name: str) -> Optional[dict]:
-        """在 friends.json 中模糊匹配聊天列表行名。双向子串匹配。"""
+        """在 friends.json 中模糊匹配聊天列表行名。双向子串匹配。
+
+        如果匹配失败但存在名为 "unknown" 的好友，则将第一个 unknown 好友
+        匹配到此 row_name 并更新其名字（解决招呼页名字检测失败的情况）。
+        """
         for uid, friend in all_friends.items():
             fname = friend.get("name") or uid
             if fname == "unknown":
                 continue
             if fname in row_name or row_name in fname:
                 return {"uid": uid, "name": fname, **friend}
+
+        # 正常匹配失败，尝试匹配 unknown 好友
+        for uid, friend in all_friends.items():
+            fname = friend.get("name") or uid
+            if fname != "unknown":
+                continue
+            # 将 unknown 好友匹配到此 row_name，并更新名字和 uid
+            self._logger.info(
+                "_match_friend: 将 unknown 好友 %s 匹配为 %r", uid, row_name
+            )
+            new_uid = row_name
+            try:
+                self.storage.mark_status(uid, friend.get("status", "accepted"),
+                                         chat_round=friend.get("chat_round", 0),
+                                         name=row_name)
+                if uid != new_uid:
+                    self.storage.rename_uid(uid, new_uid)
+            except Exception:
+                self._logger.debug("_match_friend: 更新好友名字失败", exc_info=True)
+            friend["name"] = row_name
+            return {"uid": new_uid, "name": row_name, **friend}
+
+        # 诊断：记录无法匹配的行名
+        known_names = [
+            (f.get("name") or u)
+            for u, f in all_friends.items()
+            if (f.get("name") or u) != "unknown"
+        ]
+        self._logger.debug(
+            "_match_friend: 无法匹配 row_name=%r，已知好友: %s",
+            row_name,
+            known_names,
+        )
         return None
 
     # ------------------------------------------------------------------
@@ -360,10 +334,12 @@ class SessionRound:
 
     def _phase3_follow_and_mutual(self) -> None:
         """遍历 friends.json：
-          - chat_round >= N 且 status=="accepted" → 点关注
+          - 直接拉群模式：status=="accepted" → 立即关注+邀请+拉黑
+          - 普通模式：chat_round >= N 且 status=="accepted" → 点关注
           - status=="followed" → 检测互关 → 互关则邀请进群 + 拉黑 → done
         """
         self.current_phase = Phase.CHECKING_MUTUAL
+        direct_mode = self.settings.get("direct_group_mode", False)
 
         all_friends = self.storage.get_all_friends()
         if not all_friends:
@@ -380,7 +356,13 @@ class SessionRound:
                 chat_round = int(friend.get("chat_round") or 0)
                 name = friend.get("name") or uid
 
-                if status == "accepted" and chat_round >= self.N:
+                # 直接拉群模式：跳过聊天，直接关注+检测互关
+                if direct_mode and status in ("accepted",):
+                    self._logger.info("Phase 3: %s 直接拉群模式 → 点关注", name)
+                    self._do_follow(uid, name, chat_round)
+                    # 关注后立即检测互关
+                    self._do_mutual_check(uid, name)
+                elif not direct_mode and status == "accepted" and chat_round >= self.N:
                     self._do_follow(uid, name, chat_round)
                 elif status == "followed":
                     self._do_mutual_check(uid, name)
