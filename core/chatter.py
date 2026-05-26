@@ -6,6 +6,7 @@ import time
 import xml.etree.ElementTree as ET
 from typing import Optional
 
+from actions.chat_unread_badge import find_friend_with_unread
 from core.driver import DeviceHandler
 from core.message_pool import MessagePoolManager
 from data.storage import StorageHandler
@@ -189,39 +190,18 @@ class OneOnOneChatter:
                     time.sleep(2)
                     continue
 
-                row_rid = self._get_rid("chat_list", "chat_row")
-                name_rid = self._get_rid("chat_list", "chat_row_name")
-                unread_rid = self._get_rid("chat_list", "chat_unread_badge")
                 root = ET.fromstring(xml) if xml else None
-
-                if root is None or not row_rid:
+                if root is None:
                     time.sleep(random.uniform(2.0, 3.5))
                     continue
 
-                for node in root.iter():
-                    if node.attrib.get("resource-id") != row_rid:
-                        continue
-
-                    # 找行内名字和未读角标
-                    row_name = ""
-                    has_badge = False
-                    for child in node.iter():
-                        rid = child.attrib.get("resource-id", "")
-                        if rid == unread_rid:
-                            has_badge = True
-                        elif rid == name_rid:
-                            row_name = (child.attrib.get("text") or "").strip()
-
-                    if not has_badge:
-                        continue
-
-                    # 如果指定了目标好友，必须匹配
-                    if friend_name and friend_name not in row_name:
-                        continue
-
-                    self._logger.info(
-                        "检测到目标好友回复: %s", row_name
-                    )
+                matched = find_friend_with_unread(
+                    root,
+                    self.elements,
+                    friend_name=friend_name,
+                )
+                if matched is not None:
+                    self._logger.info("检测到目标好友有未读消息: %s", matched)
                     return True
 
                 time.sleep(random.uniform(2.0, 3.5))

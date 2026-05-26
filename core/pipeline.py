@@ -10,7 +10,6 @@
 import logging
 import random
 import time
-import xml.etree.ElementTree as ET
 from typing import Optional
 
 from actions.chat_topbar import handle_chat_topbar_friend_actions
@@ -21,7 +20,7 @@ from core.greeter import GreetingScanner
 from core.group_invite import GroupInviter
 from core.message_pool import MessagePoolManager
 from data.storage import StorageHandler
-from utils.helpers import parse_bounds, random_delay
+from utils.helpers import random_delay
 
 
 # ---------------------------------------------------------------------------
@@ -238,95 +237,6 @@ class SessionRound:
             len(report.failed),
             report.stopped_reason,
         )
-
-    # ------------------------------------------------------------------
-    # Step B 辅助方法
-    # ------------------------------------------------------------------
-
-    def _scroll_to_top_of_chat_list(self) -> None:
-        """点击底部「消息」tab 使聊天列表回到顶部。"""
-        chat_entry_text = self.chatter._get_text("chat_list", "chat_entry")
-        if not chat_entry_text:
-            return
-        try:
-            xml = self.driver.d.dump_hierarchy()
-            root = ET.fromstring(xml)
-            for node in root.iter():
-                if (node.attrib.get("text") or "").strip() == chat_entry_text:
-                    b = parse_bounds(node.attrib.get("bounds", ""))
-                    if b:
-                        cx = (b[0] + b[2]) // 2
-                        cy = (b[1] + b[3]) // 2
-                        self.driver.random_click_xy(cx, cy)
-                        time.sleep(random.uniform(0.3, 0.6))
-                        self.driver.wait_ui_stable(max_wait=1.2)
-                        # 验证 chat_row 元素可见
-                        try:
-                            row_rid = self.chatter._get_rid("chat_list", "chat_row")
-                            xml2 = self.driver.d.dump_hierarchy()
-                            if row_rid and row_rid in xml2:
-                                self._logger.debug(
-                                    "Step B: 已回到聊天列表顶部，chat_row 可见"
-                                )
-                            else:
-                                self._logger.warning(
-                                    "Step B: 点击「消息」tab 后未检测到 chat_row，"
-                                    "页面可能未正确加载"
-                                )
-                        except Exception:
-                            self._logger.debug(
-                                "Step B: chat_row 验证异常", exc_info=True
-                            )
-                        return
-        except Exception:
-            self._logger.debug("Step B: 回到顶部失败", exc_info=True)
-
-    def _match_friend(self, all_friends: dict, row_name: str) -> Optional[dict]:
-        """在 friends.json 中模糊匹配聊天列表行名。双向子串匹配。
-
-        如果匹配失败但存在名为 "unknown" 的好友，则将第一个 unknown 好友
-        匹配到此 row_name 并更新其名字（解决招呼页名字检测失败的情况）。
-        """
-        for uid, friend in all_friends.items():
-            fname = friend.get("name") or uid
-            if fname == "unknown":
-                continue
-            if fname in row_name or row_name in fname:
-                return {"uid": uid, "name": fname, **friend}
-
-        # 正常匹配失败，尝试匹配 unknown 好友
-        for uid, friend in all_friends.items():
-            fname = friend.get("name") or uid
-            if fname != "unknown":
-                continue
-            # 将 unknown 好友匹配到此 row_name，并更新名字和 uid
-            self._logger.info(
-                "_match_friend: 将 unknown 好友 %s 匹配为 %r", uid, row_name
-            )
-            new_uid = row_name
-            try:
-                self.storage.mark_status(uid, friend.get("status", "accepted"),
-                                         chat_round=friend.get("chat_round", 0),
-                                         name=row_name)
-                if uid != new_uid:
-                    self.storage.rename_uid(uid, new_uid)
-            except Exception:
-                self._logger.debug("_match_friend: 更新好友名字失败", exc_info=True)
-            friend["name"] = row_name
-            return {"uid": new_uid, "name": row_name, **friend}
-
-        # 诊断：记录无法匹配的行名
-        known_names = [
-            (f.get("name") or u)
-            for u, f in all_friends.items()
-            if (f.get("name") or u) != "unknown"
-        ]
-        self._logger.debug(
-            "_match_friend: 无法匹配 row_name=%r，已知好友: %s",
-            row_name,
-            known_names,
-        )
-        return None
 
     # ------------------------------------------------------------------
     # Phase 3 — 关注 + 互关检测 + 邀请 + 拉黑

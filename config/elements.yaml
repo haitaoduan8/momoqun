@@ -11,9 +11,9 @@ chat_list:
   # 进入聊天列表页的文案入口（如底部 tab "消息"）
   chat_entry:
     text: "消息"
-  # 每一行顶栏容器（每会话一条，供枚举 bounds；勿用不存在的 chat_list_item）
+  # 每一行会话容器（item_layout 含昵称区 + 底部摘要 + 右侧红色未读角标）
   chat_row:
-    resourceId: "com.immomo.momo:id/chatlist_item_layout_top_part"
+    resourceId: "com.immomo.momo:id/item_layout"
   # 行内昵称 TextView（无 uid 节点时用昵称作 Candidate.uid 兜底）
   chat_row_name:
     resourceId: "com.immomo.momo:id/chatlist_item_tv_name"

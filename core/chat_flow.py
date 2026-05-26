@@ -19,6 +19,8 @@ import xml.etree.ElementTree as ET
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from actions.chat_topbar import handle_chat_topbar_friend_actions
+from actions.chat_unread_badge import extract_row_meta
+from actions.ui_hierarchy import _safe_dump_hierarchy
 from actions.mutual_friend import detect_mutual_friend_by_voice_button
 from actions.scroll_engine import smooth_scroll_up
 from core.driver import DeviceHandler
@@ -151,7 +153,9 @@ class ChatListUiSource(CandidateSource):
     # ------------------------ UI 操作 ------------------------
     def _dump(self) -> Optional[ET.Element]:
         try:
-            xml = self.driver.d.dump_hierarchy()
+            xml = _safe_dump_hierarchy(self.driver)
+            if not xml:
+                return None
             return ET.fromstring(xml)
         except Exception:
             self.log.exception("dump_hierarchy 失败")
@@ -258,9 +262,6 @@ class ChatListUiSource(CandidateSource):
     # ------------------------ 节点提取 ------------------------
     def _extract_rows(self, root: ET.Element) -> List[Candidate]:
         row_rid = self._get_rid("chat_list", "chat_row")
-        name_rid = self._get_rid("chat_list", "chat_row_name")
-        uid_rid = self._get_rid("chat_list", "chat_row_uid")
-        unread_rid = self._get_rid("chat_list", "chat_unread_badge")
         if not row_rid:
             self.log.warning("chat_list.chat_row.resourceId 未配置")
             return []
@@ -269,21 +270,15 @@ class ChatListUiSource(CandidateSource):
         for node in root.iter():
             if node.attrib.get("resource-id") != row_rid:
                 continue
-            bounds = _parse_bounds(node.attrib.get("bounds", ""))
-            if bounds is None:
+
+            meta = extract_row_meta(node, self.elements)
+            if meta is None:
                 continue
 
-            uid: Optional[str] = None
-            name: Optional[str] = None
-            has_unread = False
-            for child in node.iter():
-                rid = child.attrib.get("resource-id") or ""
-                if uid_rid and rid == uid_rid and not uid:
-                    uid = (child.attrib.get("text") or "").strip() or None
-                elif name_rid and rid == name_rid and not name:
-                    name = (child.attrib.get("text") or "").strip() or None
-                elif unread_rid and rid == unread_rid:
-                    has_unread = True
+            uid = meta.get("uid")
+            name = meta.get("name")
+            has_unread = bool(meta.get("has_unread"))
+            bounds = meta.get("bounds")
 
             if not uid:
                 uid = name or f"anon-{uuid.uuid4().hex[:10]}"
@@ -422,7 +417,27 @@ class ChatListUiSource(CandidateSource):
             self._last_fingerprint = self._fingerprint(rows_before)
             self._last_tail_uid = tail_before
             self._tail_stable_count = 0
-            return True  # 允许后续 fetch_visible 做指纹收束
+            return True
+
+        # 已到底：不再下翻，只做回顶+指纹收束
+        if self._saw_list_bottom:
+            before = self._last_fingerprint
+            self._scroll_to_top()
+            try:
+                self.driver.wait_ui_stable(max_wait=1.0)
+            except Exception:
+                self.log.debug("wait_ui_stable 异常（忽略）", exc_info=True)
+            root2 = self._dump()
+            if root2 is None:
+                return False
+            fp = self._fingerprint(self._extract_rows(root2))
+            self._last_fingerprint = fp
+            changed = fp != before
+            if not changed:
+                self._stable_count += 1
+            else:
+                self._stable_count = 0
+            return bool(changed)
 
         self._scroll_list_down_one()
         try:
@@ -785,7 +800,9 @@ class ChatFlow:
 
         def _already_done(uid: str) -> bool:
             """判断好友是否本轮已完成（无需再处理）。"""
-            entry = self.storage.get_friend(uid) or {}
+            _, entry = self.storage.resolve_friend(uid)
+            if entry is None:
+                return True
             cr = int(entry.get("chat_round") or 0)
             S = self._cfg_int("max_chat_rounds", 10)
             status = entry.get("status") or ""
@@ -804,7 +821,9 @@ class ChatFlow:
 
         def _visible_extra_filter(cand: Candidate) -> bool:
             """破冰后只回复有新消息的好友；已发回关话术的仅检测互关不回复。"""
-            entry = self.storage.get_friend(cand.uid) or {}
+            _, entry = self.storage.resolve_friend(cand.uid, cand.name)
+            if entry is None:
+                return False
             cr = int(entry.get("chat_round") or 0)
             # 已发回关话术 → 有新消息才进入（仅检测互关，不回复）
             if entry.get("huiguan_sent"):

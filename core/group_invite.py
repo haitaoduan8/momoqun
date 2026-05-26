@@ -71,7 +71,7 @@ class GroupInviter:
     def enter_group(self, group_name: str) -> bool:
         """在聊天列表中找到指定群聊并点击进入。支持向下滚动翻找（最多 10 次）。
 
-        真机验证：聊天列表行用 resourceId=chatlist_item_layout_top_part，
+        真机验证：聊天列表行用 resourceId=item_layout（含右侧红色未读角标），
         行内昵称用 chatlist_item_tv_name。
         """
         try:

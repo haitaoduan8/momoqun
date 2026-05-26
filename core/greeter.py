@@ -128,6 +128,13 @@ class GreetingScanner:
             logging.exception("enter_sayhi_list 异常")
             return False
 
+    # UI 文案黑名单：这些不是用户昵称，不应被识别为好友名
+    _NAME_BLACKLIST = {
+        "拒绝", "通过", "取消", "确定", "关注", "消息", "设置",
+        "添加", "删除", "完成", "返回", "发送", "保存", "更多",
+        "收到的招呼", "互动通知", "订阅内容",
+    }
+
     def _find_name_in_sayhi_item(self, accept_el) -> Optional[str]:
         """在招呼列表条目中，顺着「通过」按钮往 DOM 树上找父级容器，取容器内第一个文本节点作为昵称。"""
         try:
@@ -147,12 +154,20 @@ class GreetingScanner:
 
             btn_cy = (el_top + el_bottom) // 2
 
+            def _valid_name(txt: str) -> bool:
+                t = txt.strip()
+                if not t or len(t) > 20:
+                    return False
+                if t in self._NAME_BLACKLIST:
+                    return False
+                return True
+
             # 策略 1：找 DOM 中与按钮同行、在按钮左侧的文本节点
             best_name = None
             best_left = 99999
             for node in root.iter():
                 txt = (node.attrib.get("text") or "").strip()
-                if not txt or len(txt) > 20:
+                if not _valid_name(txt):
                     continue
                 b = parse_bounds(node.attrib.get("bounds", ""))
                 if b is None:
@@ -168,6 +183,7 @@ class GreetingScanner:
                     best_name = txt
 
             if best_name:
+                self._logger.info("_find_name_in_sayhi_item 策略1命中: %s", best_name)
                 return best_name
 
             # 策略 2：向上找父级容器，取容器内 bounds 最靠上/靠左的第一个短文本
@@ -175,7 +191,6 @@ class GreetingScanner:
                 for node in root.iter():
                     if node.attrib.get("resource-id", "") != el_rid:
                         continue
-                    # 找到按钮节点，往上找父级
                     parent = node
                     for _ in range(5):
                         prev = parent
@@ -186,18 +201,21 @@ class GreetingScanner:
                                     break
                         if prev is parent:
                             break
-                        # 在父级容器里找名字
                         texts = []
                         for child in parent.iter():
                             t = (child.attrib.get("text") or "").strip()
                             cb = parse_bounds(child.attrib.get("bounds", ""))
-                            if t and 1 <= len(t) <= 20 and cb:
+                            if _valid_name(t) and cb:
                                 texts.append((cb[0], t))  # (left, text)
                         texts.sort()
                         if texts:
+                            self._logger.info(
+                                "_find_name_in_sayhi_item 策略2命中: %s", texts[0][1]
+                            )
                             return texts[0][1]
                     break
 
+            self._logger.warning("_find_name_in_sayhi_item: 未识别到昵称")
             return None
         except Exception:
             self._logger.debug("_find_name_in_sayhi_item 异常", exc_info=True)

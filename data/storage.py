@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 
 ALLOWED_STATUS = {
@@ -72,6 +72,30 @@ class StorageHandler:
     def get_friend(self, uid: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             return self._read_all().get(uid)
+
+    def resolve_friend(
+        self, uid: str, name: Optional[str] = None
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """按 uid 或列表昵称解析 ``friends.json`` 条目。
+
+        返回 ``(canonical_uid, entry)``；未命中时 ``(None, None)``。
+        """
+        uid_key = (uid or "").strip()
+        display = (name or "").strip()
+        with self._lock:
+            friends = self._read_all()
+        if uid_key and uid_key in friends:
+            return uid_key, friends[uid_key]
+        for label in (display, uid_key):
+            if not label:
+                continue
+            for fid, entry in friends.items():
+                fname = (entry.get("name") or fid or "").strip()
+                if not fname or fname == "unknown":
+                    continue
+                if label in fname or fname in label:
+                    return fid, entry
+        return None, None
 
     def update_friend(self, uid: str, data: Dict[str, Any]) -> None:
         """整条覆盖写（保留旧 API）。"""
