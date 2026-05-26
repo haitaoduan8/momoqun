@@ -396,15 +396,30 @@ async def api_set_config(data: dict = None):
 # ---------------------------------------------------------------------------
 # 关闭 API
 # ---------------------------------------------------------------------------
+def _clear_friend_data():
+    """安全退出时清零好友数据。"""
+    base = os.path.dirname(os.path.abspath(__file__))
+    for fname in ("friends.json", "state.json"):
+        path = os.path.join(base, "data", fname)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{}")
+            logger.info("已清零: %s", path)
+        except Exception:
+            logger.warning("清零 %s 失败", path, exc_info=True)
+
+
 @app.post("/api/shutdown")
 async def api_shutdown():
-    """优雅关闭：停止所有设备线程，设置退出标志。"""
+    """优雅关闭：停止所有设备线程，清零好友数据，退出。"""
     logger.info("收到 shutdown 请求，清理中...")
     try:
         mgr = _get_device_manager()
         mgr.stop_all()
     except Exception as e:
         logger.warning("停止设备失败: %s", e)
+
+    _clear_friend_data()
 
     def _do_exit():
         time.sleep(1)
@@ -433,6 +448,7 @@ def main() -> None:
         logger.info("Server 退出中...")
         if _device_manager:
             _device_manager.stop_all()
+        _clear_friend_data()
 
     signal.signal(signal.SIGINT, lambda s, f: cleanup() or sys.exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: cleanup() or sys.exit(0))
