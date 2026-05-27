@@ -3,6 +3,10 @@ entry_elements:
     text: "收到的招呼"
   red_dot:
     resourceId: "com.immomo.momo:id/chatlist_item_tv_status_new"
+  # 招呼详情页是卡片堆叠式（顶部最大的一张是当前活动卡片）。
+  # 昵称直接挂在 com.immomo.momo:id/tv_name 上，按 height/y_bottom 取最顶层即可。
+  sayhi_card_name:
+    resourceId: "com.immomo.momo:id/tv_name"
 
 # 聊天列表。以下为 OnePlus+当前渠道包在「消息」Tab 下 uiautomator dump 对齐的 id
 #（历史占位符 chat_list_item 在现版已改为 chatlist_item_* 命名，无独立 uid 子节点。）

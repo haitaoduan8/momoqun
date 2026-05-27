@@ -128,106 +128,85 @@ class GreetingScanner:
             logging.exception("enter_sayhi_list 异常")
             return False
 
-    # UI 文案黑名单：这些不是用户昵称，不应被识别为好友名
+    # UI 文案黑名单：这些是按钮/标签文本，绝不会是好友昵称。
     _NAME_BLACKLIST = {
         "拒绝", "通过", "取消", "确定", "关注", "消息", "设置",
         "添加", "删除", "完成", "返回", "发送", "保存", "更多",
+        "回复", "忽略", "列表",
         "收到的招呼", "互动通知", "订阅内容",
     }
 
-    def _find_name_in_sayhi_item(self, accept_el) -> Optional[str]:
-        """在招呼列表条目中，顺着「通过」按钮往 DOM 树上找父级容器，取容器内第一个文本节点作为昵称。"""
+    def _find_active_sayhi_name(self, root: ET.Element) -> Optional[str]:
+        """识别当前最顶层招呼卡片的昵称。
+
+        招呼详情页是「卡片堆叠」结构：一次只能通过最上面一张卡片，
+        其他卡片以缩小的预览堆在下方/上方。三张卡片都含
+        ``com.immomo.momo:id/tv_name`` 节点，但只有最顶层那张是当前可操作的。
+
+        判定规则（按稳定性排序，组合使用）：
+          1. ``tv_name`` 必须在「通过」按钮上方（y_bottom < confirm_btn.top），
+             否则可能是 footer 区域的混淆文本；
+          2. height ≥ 30，过滤被裁切到只剩个标点的堆叠预览；
+          3. 优先 height 最大（顶层卡片字号最大），同 height 时取 y_bottom 最大
+             （视觉上最贴近按钮，即活动卡片）。
+
+        命中失败返回 ``None``，调用方应入库 ``unknown`` 兜底。
+        """
+        name_rid = self._get_rid("entry_elements", "sayhi_card_name") or "com.immomo.momo:id/tv_name"
+        btn_rid = self._get_rid("buttons", "accept_button")
+
         try:
-            xml = self.driver.d.dump_hierarchy()
-            root = ET.fromstring(xml)
-
-            # 找到「通过」按钮在 DOM 中的节点
-            el_info = accept_el.info
-            if not el_info:
-                return None
-            el_rid = el_info.get("resourceName") or ""
-            el_bounds = el_info.get("bounds") or {}
-            el_top = el_bounds.get("top", 0)
-            el_bottom = el_bounds.get("bottom", 0)
-            el_left = el_bounds.get("left", 0)
-            el_right = el_bounds.get("right", 0)
-
-            btn_cy = (el_top + el_bottom) // 2
-
-            def _valid_name(txt: str) -> bool:
-                t = txt.strip()
-                if not t or len(t) > 20:
-                    return False
-                if t in self._NAME_BLACKLIST:
-                    return False
-                return True
-
-            # 策略 1：找 DOM 中与按钮同行、在按钮左侧的文本节点
-            best_name = None
-            best_left = 99999
-            for node in root.iter():
-                txt = (node.attrib.get("text") or "").strip()
-                if not _valid_name(txt):
-                    continue
-                b = parse_bounds(node.attrib.get("bounds", ""))
-                if b is None:
-                    continue
-                nl, nt, nr, nb = b
-                node_cy = (nt + nb) // 2
-                if abs(node_cy - btn_cy) > 100:
-                    continue
-                if nr > el_left + 30:   # 必须在按钮左侧
-                    continue
-                if nl < best_left:
-                    best_left = nl
-                    best_name = txt
-
-            if best_name:
-                self._logger.info("_find_name_in_sayhi_item 策略1命中: %s", best_name)
-                return best_name
-
-            # 策略 2：向上找父级容器，取容器内 bounds 最靠上/靠左的第一个短文本
-            if el_rid:
-                for node in root.iter():
-                    if node.attrib.get("resource-id", "") != el_rid:
-                        continue
-                    parent = node
-                    for _ in range(5):
-                        prev = parent
-                        for p in root.iter():
-                            for c in p:
-                                if c is parent:
-                                    parent = p
-                                    break
-                        if prev is parent:
+            btn_top: Optional[int] = None
+            if btn_rid:
+                for n in root.iter():
+                    if n.attrib.get("resource-id") == btn_rid:
+                        b = parse_bounds(n.attrib.get("bounds", ""))
+                        if b:
+                            btn_top = b[1]
                             break
-                        texts = []
-                        for child in parent.iter():
-                            t = (child.attrib.get("text") or "").strip()
-                            cb = parse_bounds(child.attrib.get("bounds", ""))
-                            if _valid_name(t) and cb:
-                                texts.append((cb[0], t))  # (left, text)
-                        texts.sort()
-                        if texts:
-                            self._logger.info(
-                                "_find_name_in_sayhi_item 策略2命中: %s", texts[0][1]
-                            )
-                            return texts[0][1]
-                    break
 
-            self._logger.warning("_find_name_in_sayhi_item: 未识别到昵称")
-            return None
+            candidates = []
+            for n in root.iter():
+                if n.attrib.get("resource-id") != name_rid:
+                    continue
+                b = parse_bounds(n.attrib.get("bounds", ""))
+                txt = (n.attrib.get("text") or "").strip()
+                if not b or not txt:
+                    continue
+                if btn_top is not None and b[1] >= btn_top:
+                    continue
+                if txt in self._NAME_BLACKLIST:
+                    continue
+                if len(txt) > 20:
+                    continue
+                h = b[3] - b[1]
+                if h < 30:
+                    continue
+                candidates.append((h, b[3], txt, b))
+
+            if not candidates:
+                self._logger.warning(
+                    "_find_active_sayhi_name: 未发现可用 tv_name (name_rid=%s btn_top=%s)",
+                    name_rid,
+                    btn_top,
+                )
+                return None
+
+            candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            h, yb, txt, b = candidates[0]
+            self._logger.info(
+                "_find_active_sayhi_name 命中: %r (height=%d y_bottom=%d bounds=%s 候选数=%d)",
+                txt, h, yb, b, len(candidates),
+            )
+            return txt
         except Exception:
-            self._logger.debug("_find_name_in_sayhi_item 异常", exc_info=True)
+            self._logger.exception("_find_active_sayhi_name 异常")
             return None
 
     def approve_one(self) -> Optional[dict]:
-        """在招呼列表页点击第一个「通过」按钮，通过一个招呼。
+        """通过当前最顶层招呼卡片，先识别昵称再点击。
 
-        先识别对方昵称，再点通过。不再依赖点击后的自动跳转，
-        由调用方自行回到聊天列表并通过昵称匹配进入对话框。
-
-        返回 ``{"name": str}`` 或 None（失败时）。
+        返回 ``{"name": str}``（昵称未识别到时 ``name`` 为 None），失败返回 None。
         """
         try:
             accept_rid = self._get_rid("buttons", "accept_button")
@@ -240,8 +219,13 @@ class GreetingScanner:
                 self._logger.warning("approve_one: 未找到「通过」按钮")
                 return None
 
-            # 点通过之前先尝试获取对方昵称
-            name = self._find_name_in_sayhi_item(el)
+            name: Optional[str] = None
+            try:
+                xml = self.driver.d.dump_hierarchy()
+                root = ET.fromstring(xml)
+                name = self._find_active_sayhi_name(root)
+            except Exception:
+                self._logger.exception("approve_one: dump_hierarchy/解析失败")
 
             self.driver.click_uielement(el)
             random_delay(self.settings)
