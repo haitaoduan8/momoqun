@@ -34,8 +34,8 @@ class MainActivity : AppCompatActivity() {
             binding.inputSerial.setText(it.serial)
         }
 
-        binding.btnStart.setOnClickListener { onStart() }
-        binding.btnStop.setOnClickListener { onStop() }
+        binding.btnStart.setOnClickListener { startAgent() }
+        binding.btnStop.setOnClickListener { stopAgent() }
         binding.btnOpenA11y.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         try { unregisterReceiver(statusReceiver) } catch (_: Exception) {}
     }
 
-    private fun onStart() {
+    private fun startAgent() {
         val master = binding.inputMaster.text?.toString()?.trim().orEmpty()
         val serial = binding.inputSerial.text?.toString()?.trim().orEmpty()
         if (master.isEmpty() || serial.isEmpty()) {
@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         refreshButtons(running = true)
     }
 
-    private fun onStop() {
+    private fun stopAgent() {
         val intent = Intent(this, AgentForegroundService::class.java).apply {
             action = AgentForegroundService.ACTION_STOP
         }
