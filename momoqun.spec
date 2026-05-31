@@ -92,6 +92,7 @@ a = Analysis(
         'core.message_pool',
         'core.traversal',
         'core.chat_flow',
+        'core.account_check',
         # 路线 C 反向 RPC
         'agent_router',
         # 数据层
@@ -121,6 +122,7 @@ a = Analysis(
         'ui.config_panel',
         'ui.device_list',
         'ui.log_area',
+        'ui.account_check_panel',
     ],
     hookspath=[],
     hooksconfig={},

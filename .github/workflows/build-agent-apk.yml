@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "agent-android/**"
+      - ".github/workflows/build-agent-apk.yml"
   pull_request:
     paths:
       - "agent-android/**"
