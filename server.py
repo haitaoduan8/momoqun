@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import atexit
+import collections
 import logging
 import os
 import signal
@@ -54,6 +56,41 @@ ELEMENTS_PATH = os.path.join(BASE, "config", "elements.yaml")
 app = FastAPI(title="momoqun", docs_url=None, redoc_url=None)
 logger = logging.getLogger("server")
 
+
+# ---------------------------------------------------------------------------
+# 内存环形日志缓冲：供 Web UI 实时展示运行日志（替代前端 mock）
+# ---------------------------------------------------------------------------
+_LOG_BUFFER: "collections.deque[Dict[str, str]]" = collections.deque(maxlen=500)
+_LOG_BUFFER_LOCK = threading.Lock()
+
+
+class _RingLogHandler(logging.Handler):
+    """把日志记录写入内存环形缓冲，异常安全。"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            msg = str(getattr(record, "msg", ""))
+        entry = {
+            "time": time.strftime("%H:%M:%S", time.localtime(record.created)),
+            "level": record.levelname,
+            "name": record.name,
+            "message": msg,
+        }
+        with _LOG_BUFFER_LOCK:
+            _LOG_BUFFER.append(entry)
+
+
+def _install_ring_log_handler() -> None:
+    """把环形日志 handler 挂到 root logger（幂等）。"""
+    root = logging.getLogger()
+    if any(isinstance(h, _RingLogHandler) for h in root.handlers):
+        return
+    h = _RingLogHandler()
+    h.setLevel(logging.INFO)
+    root.addHandler(h)
+
 # CORS：Flet Web 在 localhost:8550 调 API 需要跨域
 app.add_middleware(
     CORSMiddleware,
@@ -61,6 +98,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 挂载 APK Agent WebSocket 路由（路线 C）
+# 暴露：
+#   - WS: ws://<host>:<port>/agent/{serial}    供 momoqun-agent.apk 连接
+#   - HTTP GET /api/agents                     在线 agent 列表
+try:
+    from agent_router import mount_agent_routes
+    mount_agent_routes(app)
+except Exception:
+    logger.exception("挂载 agent_router 失败（agent 模式不可用）")
 
 
 # 全局异常处理器：确保所有错误都返回 JSON（而不是 HTML 500 页面）
@@ -83,14 +131,16 @@ _device_manager_lock = threading.RLock()
 def _get_device_manager():
     global _device_manager
     if _device_manager is None:
-        try:
-            from device_manager import DeviceManager
-        except Exception as e:
-            logger.exception("加载 device_manager 失败")
-            raise RuntimeError(f"加载设备管理模块失败: {e}") from e
-        settings = _load_settings()
-        elements = _load_elements()
-        _device_manager = DeviceManager([], settings, elements)
+        with _device_manager_lock:
+            if _device_manager is None:
+                try:
+                    from device_manager import DeviceManager
+                except Exception as e:
+                    logger.exception("加载 device_manager 失败")
+                    raise RuntimeError(f"加载设备管理模块失败: {e}") from e
+                settings = _load_settings()
+                elements = _load_elements()
+                _device_manager = DeviceManager([], settings, elements)
     return _device_manager
 
 
@@ -275,14 +325,10 @@ async def api_devices_add(data: dict = None):
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
 
-    from device_manager import DeviceThread
     mgr = _get_device_manager()
-
-    if serial in mgr._threads:
+    dt = mgr.add_device(serial, name)
+    if dt is None:
         return JSONResponse({"ok": False, "error": "设备已存在"}, status_code=400)
-
-    dt = DeviceThread(serial, name, _load_settings(), _load_elements())
-    mgr._threads[serial] = dt
     logger.info("添加设备: %s (%s)", name, serial)
     return {"ok": True, "device": dt.snapshot()}
 
@@ -296,10 +342,7 @@ async def api_devices_remove(data: dict = None):
     if not serial:
         return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
     mgr = _get_device_manager()
-    dt = mgr._threads.get(serial)
-    if dt:
-        dt.stop()
-        del mgr._threads[serial]
+    if mgr.remove_device(serial):
         logger.info("移除设备: %s", serial)
         return {"ok": True}
     return JSONResponse({"ok": False, "error": "设备不存在"}, status_code=404)
@@ -335,15 +378,91 @@ async def api_devices_action(action: str, data: dict = None):
 
 
 # ---------------------------------------------------------------------------
+# 账号检测 API
+# ---------------------------------------------------------------------------
+@app.get("/api/account-check/status")
+async def api_account_check_status():
+    """聚合配置 + 所有设备的检测状态。供前端轮询。"""
+    try:
+        mgr = _get_device_manager()
+        return mgr.get_account_check_status()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/account-check/config")
+async def api_account_check_config(data: dict = None):
+    """更新配置。body: {"enabled": bool, "interval_minutes": int, "on_abnormal": str}
+    任一字段缺省表示不修改。会同时持久化到 settings.yaml。"""
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        mgr = _get_device_manager()
+        new_cfg = mgr.set_account_check_config(
+            enabled=data.get("enabled"),
+            interval_minutes=data.get("interval_minutes"),
+            on_abnormal=data.get("on_abnormal"),
+        )
+        # 持久化到 settings.yaml
+        try:
+            s = _load_settings()
+            ac = s.setdefault("account_check", {})
+            ac["enabled"] = new_cfg["enabled"]
+            ac["interval_minutes"] = new_cfg["interval_minutes"]
+            ac["on_abnormal"] = new_cfg["on_abnormal"]
+            _save_settings(s)
+        except Exception:
+            logger.exception("持久化 account_check 配置失败（运行时配置仍生效）")
+        return {"ok": True, "config": new_cfg}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/account-check/trigger")
+async def api_account_check_trigger(data: dict = None):
+    """立即触发账号检测。
+    body 空 → 对所有 running 设备触发。
+    body 含 serial → 仅对该设备触发。"""
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
+    try:
+        mgr = _get_device_manager()
+        if serial:
+            ok = mgr.trigger_account_check_one(serial)
+            return {"ok": ok, "triggered": 1 if ok else 0}
+        n = mgr.trigger_account_check_all()
+        return {"ok": True, "triggered": n}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/account-check/dismiss")
+async def api_account_check_dismiss(data: dict = None):
+    """清除某台设备的异常标记（用户处理完毕后用）。
+    如果设备是因检测被暂停的，自动恢复。"""
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
+    if not serial:
+        return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
+    try:
+        mgr = _get_device_manager()
+        changed = mgr.dismiss_account_status(serial)
+        return {"ok": True, "changed": changed}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
 # 统计 API
 # ---------------------------------------------------------------------------
 @app.get("/api/stats")
 async def api_stats():
-    """返回好友统计 + 会话状态快照。"""
+    """返回好友统计 + 会话状态快照（聚合所有 per-device 文件）。"""
     try:
-        from data.storage import StorageHandler
-        storage = StorageHandler("data/friends.json")
-        counts = storage.count_by_status()
+        from data.storage import aggregate_count_by_status
+        counts = aggregate_count_by_status()
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -372,6 +491,22 @@ async def api_stats():
 
 
 # ---------------------------------------------------------------------------
+# 日志 API
+# ---------------------------------------------------------------------------
+@app.get("/api/logs")
+async def api_logs(limit: int = 200):
+    """返回最近的运行日志（内存环形缓冲）。供 Web UI 轮询展示。"""
+    try:
+        with _LOG_BUFFER_LOCK:
+            items = list(_LOG_BUFFER)
+        if limit and limit > 0:
+            items = items[-limit:]
+        return {"logs": items}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
 # 配置 API
 # ---------------------------------------------------------------------------
 @app.get("/api/config")
@@ -396,22 +531,40 @@ async def api_set_config(data: dict = None):
 # ---------------------------------------------------------------------------
 # 关闭 API
 # ---------------------------------------------------------------------------
-def _clear_friend_data():
-    """安全退出时清零好友数据。"""
-    base = os.path.dirname(os.path.abspath(__file__))
-    for fname in ("friends.json", "state.json"):
-        path = os.path.join(base, "data", fname)
+_CLEANUP_LOCK = threading.Lock()
+_CLEANUP_DONE = False
+
+
+def _archive_and_clear_all_devices() -> None:
+    """对所有 per-device friends/state 归档+清零，幂等。"""
+    global _CLEANUP_DONE
+    with _CLEANUP_LOCK:
+        if _CLEANUP_DONE:
+            return
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("{}")
-            logger.info("已清零: %s", path)
+            from data.storage import archive_and_clear_all
+            from core.message_pool import archive_and_clear_all_state
+
+            res_friends = archive_and_clear_all()
+            logger.info("friends 归档完成: %d 台设备", len(res_friends))
+            for serial, path in res_friends.items():
+                if path:
+                    logger.info("  [%s] -> %s", serial, path)
+
+            res_state = archive_and_clear_all_state()
+            logger.info("state 归档完成: %d 台设备", len(res_state))
         except Exception:
-            logger.warning("清零 %s 失败", path, exc_info=True)
+            logger.exception("归档清零失败（继续退出）")
+        _CLEANUP_DONE = True
+
+
+# 进程级 atexit 兜底（PyInstaller / 终端 Ctrl+C 都会触发）
+atexit.register(_archive_and_clear_all_devices)
 
 
 @app.post("/api/shutdown")
 async def api_shutdown():
-    """优雅关闭：停止所有设备线程，清零好友数据，退出。"""
+    """优雅关闭：停止所有设备线程，归档清零好友数据，退出。"""
     logger.info("收到 shutdown 请求，清理中...")
     try:
         mgr = _get_device_manager()
@@ -419,7 +572,7 @@ async def api_shutdown():
     except Exception as e:
         logger.warning("停止设备失败: %s", e)
 
-    _clear_friend_data()
+    _archive_and_clear_all_devices()
 
     def _do_exit():
         time.sleep(1)
@@ -433,22 +586,23 @@ async def api_shutdown():
 # 入口
 # ---------------------------------------------------------------------------
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    from utils.helpers import setup_logging
+    setup_logging()
+    _install_ring_log_handler()
 
     import argparse
     parser = argparse.ArgumentParser(description="momoqun Server")
-    parser.add_argument("--port", type=int, default=5000, help="Web 端口")
+    parser.add_argument("--port", type=int, default=5100, help="Web 端口")
     args = parser.parse_args()
 
     def cleanup():
         logger.info("Server 退出中...")
         if _device_manager:
-            _device_manager.stop_all()
-        _clear_friend_data()
+            try:
+                _device_manager.stop_all()
+            except Exception:
+                logger.exception("stop_all 失败")
+        _archive_and_clear_all_devices()
 
     signal.signal(signal.SIGINT, lambda s, f: cleanup() or sys.exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: cleanup() or sys.exit(0))

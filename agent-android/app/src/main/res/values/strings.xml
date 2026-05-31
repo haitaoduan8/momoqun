@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">MomoQun Agent</string>
+    <string name="a11y_label">MomoQun Agent</string>
+    <string name="a11y_description">MomoQun automation engine. Required to read UI hierarchy and dispatch gestures.</string>
+    <string name="ime_label">MomoQun IME</string>
+    <string name="ime_subtype_label">MomoQun</string>
+
+    <string name="status_disconnected">未连接</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_connected">已连接</string>
+
+    <string name="hint_master">Master 地址（ws://host:port）</string>
+    <string name="hint_serial">Serial（如 emu-5554）</string>
+    <string name="btn_start">启动 Agent</string>
+    <string name="btn_stop">停止 Agent</string>
+    <string name="btn_open_a11y">打开无障碍设置</string>
+    <string name="btn_open_ime">打开输入法设置</string>
+
+    <string name="notification_channel">Agent</string>
+    <string name="notification_title">MomoQun Agent 运行中</string>
+    <string name="notification_text">已连 master：%1$s</string>
+</resources>

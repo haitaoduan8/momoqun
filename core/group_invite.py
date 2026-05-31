@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from typing import Optional
 
 from core.driver import DeviceHandler
-from utils.helpers import parse_bounds, random_delay
+from utils.helpers import ElementsConfig, parse_bounds, random_delay
 
 
 class GroupInviter:
@@ -20,18 +20,12 @@ class GroupInviter:
         self.driver = driver
         self.elements = elements
         self.settings = settings
+        self._ec = ElementsConfig(elements)
         self._logger = logging.getLogger("group_invite")
 
-    # ------------------------ 元素配置读取 ------------------------
+    # ------------------------ 元素配置读取（委托 ElementsConfig）-------------------------
     def _get_rid(self, *path: str):
-        node: any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("resourceId") or None
-        return None
+        return self._ec.get_rid(*path)
 
     # ------------------------ 分辨率适配 ------------------------
     _REF_WIDTH = 1080  # OnePlus 8T 基准
@@ -505,27 +499,11 @@ class GroupInviter:
         return False
 
     def go_back_to_chat_list(self) -> bool:
-        """从群聊/群信息页一路返回到聊天列表。多次按 back。"""
-        row_rid = self._get_rid("chat_list", "chat_row")
-        try:
-            for i in range(5):
-                try:
-                    self.driver.d.press("back")
-                except Exception:
-                    self._logger.debug("back 异常", exc_info=True)
-                time.sleep(random.uniform(0.5, 1.0))
-                # 检查是否回到聊天列表
-                try:
-                    xml = self.driver.d.dump_hierarchy()
-                    if row_rid and row_rid in xml:
-                        self._logger.info("已回到聊天列表")
-                        return True
-                except Exception:
-                    pass
-            return True  # 尽力了
-        except Exception:
-            logging.exception("go_back_to_chat_list 异常")
-            return False
+        """从群聊/群信息页一路返回到聊天列表。"""
+        from utils.helpers import go_back_to_chat_list as _shared_back
+        return _shared_back(
+            self.driver, self.elements, max_backs=5, logger=self._logger,
+        )
 
     # ------------------------ 拉黑好友 ------------------------
     def block_friend(self, friend_name: str) -> bool:

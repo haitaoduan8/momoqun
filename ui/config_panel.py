@@ -1,47 +1,48 @@
-"""配置面板 — 全部配置项 + 消息池增删 + 策略选择 + 保存。"""
+"""配置面板 — Neon Aurora 风格，青色光效表单。"""
 
 import flet as ft
 import threading
 import requests
 from ui.theme import (
-    BG_CARD, BG_ELEVATED, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED,
-    ACCENT, SUCCESS, DANGER, BTN_RADIUS,
+    BG_CARD, BG_INPUT, BG_ELEVATED, BG_HOVER, BORDER, BORDER_FOCUS, BORDER_GLOW, DIVIDER,
+    TEXT, TEXT_SECONDARY, TEXT_MUTED, TEXT_ACCENT,
+    ACCENT, ACCENT_DIM, ACCENT_GLOW, SUCCESS, SUCCESS_DIM, DANGER, DANGER_DIM,
+    BTN_RADIUS, CARD_RADIUS, INPUT_RADIUS, ICON_RADIUS,
+    accent_btn, outline_btn, form_input, section_title, card_container, separator,
 )
 
 API = "http://localhost:5100"
 MAX_POOLS = 10
 
 
-def _field(label, ref, val="", hint="", multiline=False, height=38):
-    return ft.Row([
-        ft.Text(label, size=13, color=TEXT_SECONDARY, width=90),
-        ft.TextField(
-            ref=ref,
-            value=val,
-            hint_text=hint,
-            border_color=BORDER,
-            bgcolor=BG_ELEVATED,
-            color=TEXT,
-            text_size=13,
-            height=height if not multiline else 64,
-            multiline=multiline,
-            expand=True,
-            content_padding=ft.Padding(left=10, top=7, right=10, bottom=7),
-        ),
-    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+def _form_row(label, ref, val="", hint="", multiline=False, height=44, on_change=None):
+    tf = form_input(ref, val, hint, multiline, height, on_change)
+    return ft.Container(
+        content=ft.Column([
+            ft.Text(label, size=12, weight="w600", color=TEXT_SECONDARY),
+            tf,
+        ], spacing=6),
+        padding=ft.padding.only(bottom=14),
+    )
 
 
-def _btn(text, on_click, bgcolor=ACCENT, height=34):
-    return ft.ElevatedButton(
-        text=text,
-        on_click=on_click,
-        bgcolor=bgcolor,
-        color="#ffffff",
-        height=height,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            padding=ft.padding.symmetric(horizontal=14),
-        ),
+def _group_header(text, icon=None):
+    return ft.Container(
+        content=ft.Row([
+            ft.Container(
+                content=ft.Icon(icon, size=18, color=ACCENT) if icon else ft.Container(),
+                bgcolor=ACCENT_DIM,
+                border_radius=ICON_RADIUS,
+                padding=8,
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=12,
+                    color=ACCENT_GLOW,
+                ),
+            ) if icon else ft.Container(),
+            ft.Text(text, size=13, weight="w700", color=TEXT_ACCENT),
+        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        padding=ft.padding.only(top=18, bottom=14),
     )
 
 
@@ -55,7 +56,7 @@ class ConfigPanel:
         self.pools_container = ft.Ref[ft.Column]()
         self.direct_mode_switch = ft.Ref[ft.Switch]()
         self._pool_cnt = 5
-        self._all_inputs: list = []  # 记录所有需联动禁用的输入控件
+        self._all_inputs: list = []
 
         for k in [
             "group_name", "chat_rounds_before_follow", "max_chat_rounds",
@@ -70,122 +71,190 @@ class ConfigPanel:
     def build(self):
         self._all_inputs = []
 
-        def _make_field(label, ref, val="", hint="", multiline=False, height=38):
-            tf = ft.TextField(
-                ref=ref,
-                value=val,
-                hint_text=hint,
-                border_color=BORDER,
-                bgcolor=BG_ELEVATED,
-                color=TEXT,
-                text_size=13,
-                height=height if not multiline else 64,
-                multiline=multiline,
-                expand=True,
-                content_padding=ft.Padding(left=10, top=7, right=10, bottom=7),
-            )
+        def _make_field(label, ref, val="", hint="", multiline=False, height=44):
+            tf = form_input(ref, val, hint, multiline, height)
             self._all_inputs.append(tf)
-            return ft.Row([
-                ft.Text(label, size=13, color=TEXT_SECONDARY, width=90),
-                tf,
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text(label, size=12, weight="w600", color=TEXT_SECONDARY),
+                    tf,
+                ], spacing=6),
+                padding=ft.padding.only(bottom=14),
+            )
 
         dm_switch = ft.Switch(
             ref=self.direct_mode_switch,
             value=False,
-            active_color=SUCCESS,
+            active_color=ACCENT,
             on_change=self._on_direct_mode_changed,
         )
 
         form = ft.Column([
-            ft.Text("配置", size=15, weight="bold", color=TEXT),
-            ft.Divider(height=1, color=BORDER),
+            section_title("运行配置", ft.Icons.SETTINGS),
 
-            # 直接拉群开关（放在最上面）
-            ft.Row([
-                ft.Text("直接拉群模式", size=13, color=TEXT_SECONDARY, width=90),
-                dm_switch,
-                ft.Text("开启后仅通过招呼→邀请进群→拉黑", size=12, color=TEXT_MUTED),
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Divider(height=1, color=BORDER),
-
-            _make_field("群聊名称", self.fields["group_name"], "我的群聊"),
-            _make_field("聊N轮后关注", self.fields["chat_rounds_before_follow"], "3"),
-            _make_field("最大聊天轮数", self.fields["max_chat_rounds"], "10"),
-            _make_field("轮次间隔(秒)", self.fields["round_end_wait_s"], "10"),
-            _make_field("回复等待(秒)", self.fields["chat_round_wait_s"], "30"),
-            _make_field("招呼扫描间隔", self.fields["greet_scan_interval_s"], "5"),
-            _make_field("回关话术发送时机(轮)", self.fields["huiguan_message_round"], "3",
-                       hint="设0不发送回关话术"),
-            _make_field("回关邀请话术", self.fields["invite_back_message"], "互关拉你进群"),
-            _make_field("最大连续错误", self.fields["max_consecutive_errors"], "5"),
-            _make_field("回复间隔(秒)", self.fields["reply_min"], "1"),
-            _make_field("回复间隔~", self.fields["reply_max"], "3"),
-
-            ft.Divider(height=1, color=BORDER),
-            ft.Text("聊天策略", size=14, weight="bold", color=TEXT),
-            ft.Dropdown(
-                ref=self.strategy,
-                value="message_pool",
-                options=[
-                    ft.dropdown.Option("message_pool", "消息池模式"),
-                    ft.dropdown.Option("ai", "AI 模式（预留）"),
-                ],
-                border_color=BORDER,
+            ft.Container(
+                content=ft.Row([
+                    ft.Column([
+                        ft.Text("直接拉群模式", size=15, weight="w600", color=TEXT),
+                        ft.Text("开启后仅通过招呼→邀请进群→拉黑", size=12, color=TEXT_MUTED),
+                    ], spacing=4, expand=True),
+                    dm_switch,
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=BG_ELEVATED,
-                color=TEXT,
-                text_size=13,
+                border_radius=CARD_RADIUS,
+                padding=ft.padding.symmetric(horizontal=22, vertical=18),
+                border=ft.border.all(1, BORDER),
+                margin=ft.margin.only(bottom=10),
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=20,
+                    color=ft.Colors.with_opacity(0.2, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 4),
+                ),
             ),
 
-            ft.Divider(height=1, color=BORDER),
-            ft.Text("消息池", size=14, weight="bold", color=TEXT),
+            _group_header("群聊设置", ft.Icons.GROUP),
+            _make_field("群聊名称", self.fields["group_name"], "我的群聊"),
+            _make_field("回关邀请话术", self.fields["invite_back_message"], "互关拉你进群"),
+
+            _group_header("聊天参数", ft.Icons.CHAT_BUBBLE_OUTLINE),
             ft.Row([
-                ft.Text("消息池数量", size=13, color=TEXT_SECONDARY),
-                ft.TextField(
-                    ref=self.pool_count, value="5", text_size=13,
-                    border_color=BORDER, bgcolor=BG_ELEVATED, color=TEXT,
-                    width=60, height=34,
-                    content_padding=ft.Padding(left=8, top=0, right=8, bottom=0),
-                    text_align="center",
-                    on_change=self._on_pool_count_changed,
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("聊N轮后关注", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["chat_rounds_before_follow"], "3", height=42),
+                    ], spacing=6), expand=True,
                 ),
-                ft.IconButton(icon=ft.Icons.ADD_CIRCLE_OUTLINE, icon_color=SUCCESS,
-                              tooltip="增加消息池", on_click=self._add_pool),
-                ft.IconButton(icon=ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_color=DANGER,
-                              tooltip="减少消息池", on_click=self._remove_pool),
-            ], spacing=6),
-
-            ft.Column(ref=self.pools_container, spacing=6),
-
-            ft.Divider(height=1, color=BORDER),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("最大聊天轮数", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["max_chat_rounds"], "10", height=42),
+                    ], spacing=6), expand=True,
+                ),
+            ], spacing=14),
             ft.Row([
-                _btn("保存配置", self._save),
-                ft.Text(ref=self.status, size=13, color=TEXT_SECONDARY),
-            ], spacing=10),
-        ], spacing=8)
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("回关话术时机(轮)", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["huiguan_message_round"], "3", hint="设0不发送", height=42),
+                    ], spacing=6), expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("最大连续错误", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["max_consecutive_errors"], "5", height=42),
+                    ], spacing=6), expand=True,
+                ),
+            ], spacing=14),
+
+            _group_header("时间参数", ft.Icons.SCHEDULE),
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("轮次间隔(秒)", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["round_end_wait_s"], "10", height=42),
+                    ], spacing=6), expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("回复等待(秒)", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["chat_round_wait_s"], "30", height=42),
+                    ], spacing=6), expand=True,
+                ),
+            ], spacing=14),
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("招呼扫描间隔", size=12, weight="w600", color=TEXT_SECONDARY),
+                        form_input(self.fields["greet_scan_interval_s"], "5", height=42),
+                    ], spacing=6), expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("回复间隔(秒)", size=12, weight="w600", color=TEXT_SECONDARY),
+                        ft.Row([
+                            form_input(self.fields["reply_min"], "1", height=42),
+                            ft.Text("~", size=14, color=TEXT_MUTED, weight="w600"),
+                            form_input(self.fields["reply_max"], "3", height=42),
+                        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ], spacing=6), expand=True,
+                ),
+            ], spacing=14),
+
+            _group_header("聊天策略", ft.Icons.AUTO_AWESOME),
+            ft.Container(
+                content=ft.Dropdown(
+                    ref=self.strategy,
+                    value="message_pool",
+                    options=[
+                        ft.dropdown.Option("message_pool", "消息池模式"),
+                        ft.dropdown.Option("ai", "AI 模式（预留）"),
+                    ],
+                    border_color=BORDER,
+                    focused_border_color=BORDER_FOCUS,
+                    bgcolor=BG_INPUT,
+                    color=TEXT,
+                    text_size=13,
+                    border_radius=INPUT_RADIUS,
+                    content_padding=ft.padding.symmetric(horizontal=18, vertical=14),
+                ),
+                padding=ft.padding.only(bottom=14),
+            ),
+
+            _group_header("消息池", ft.Icons.FORMAT_LIST_BULLETED),
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("数量", size=12, color=TEXT_MUTED, weight="w500"),
+                    ft.Container(
+                        content=ft.TextField(
+                            ref=self.pool_count, value="5", text_size=12,
+                            border_color=BORDER, focused_border_color=BORDER_FOCUS,
+                            bgcolor=BG_INPUT, color=TEXT,
+                            width=56, height=36,
+                            content_padding=ft.Padding(left=10, top=0, right=10, bottom=0),
+                            text_align="center",
+                            border_radius=INPUT_RADIUS,
+                            on_change=self._on_pool_count_changed,
+                        ),
+                        margin=ft.margin.only(left=8, right=8),
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.ADD_CIRCLE_OUTLINE, icon_color=SUCCESS,
+                        icon_size=22, tooltip="增加",
+                        on_click=self._add_pool,
+                        style=ft.ButtonStyle(padding=ft.padding.all(8)),
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_color=DANGER,
+                        icon_size=22, tooltip="减少",
+                        on_click=self._remove_pool,
+                        style=ft.ButtonStyle(padding=ft.padding.all(8)),
+                    ),
+                ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.only(bottom=10),
+            ),
+
+            ft.Column(ref=self.pools_container, spacing=10),
+
+            separator(),
+            ft.Row([
+                accent_btn("保存配置", self._save, icon=ft.Icons.SAVE, height=44),
+                ft.Container(expand=True),
+                ft.Text(ref=self.status, size=12, color=TEXT_MUTED, weight="w500"),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
 
         self._rebuild_pools()
 
-        # 记录 strategy dropdown 和 pool 控件用于联动禁用
         self._all_inputs.append(self.strategy.current)
         self._all_inputs.append(self.pool_count.current)
 
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Container(
-                    content=form,
-                    width=400,
-                    alignment=ft.alignment.center,
-                ),
-                padding=20,
-            ),
-            color=BG_CARD,
-            elevation=0,
-            margin=10,
+        return ft.Container(
+            content=form,
+            padding=ft.padding.symmetric(horizontal=28, vertical=24),
         )
 
     def _on_direct_mode_changed(self, e):
-        """直接拉群开关切换时禁用/启用所有配置项。"""
         if e is not None:
             enabled = not e.control.value
         else:
@@ -205,14 +274,19 @@ class ConfigPanel:
         except Exception:
             pass
 
-    # ─── 消息池动态 ───
-
     def _rebuild_pools(self):
-        """根据 self._pool_cnt 重建消息池字段。"""
         items = []
         for i in range(1, self._pool_cnt + 1):
-            label = "池1-破冰" if i == 1 else f"池{i}"
-            items.append(_field(label, self.pools[i], multiline=True, height=56))
+            label = "池1 — 破冰" if i == 1 else f"池{i}"
+            tf = form_input(self.pools[i], multiline=True, height=64)
+            self._all_inputs.append(tf)
+            items.append(ft.Container(
+                content=ft.Column([
+                    ft.Text(label, size=12, weight="w600", color=TEXT_SECONDARY),
+                    tf,
+                ], spacing=6),
+                padding=ft.padding.only(bottom=10),
+            ))
         try:
             self.pools_container.current.controls = items
             self.pools_container.current.update()
@@ -245,8 +319,6 @@ class ConfigPanel:
             self.pool_count.current.update()
             self._rebuild_pools()
 
-    # ─── 加载 / 保存 ───
-
     def load(self):
         threading.Thread(target=self._ld, daemon=True).start()
 
@@ -273,11 +345,9 @@ class ConfigPanel:
                     self.fields[fk].current.value = str(v)
                     self.fields[fk].current.update()
 
-            # 直接拉群开关
             dm = cfg.get("direct_group_mode", False)
             self.direct_mode_switch.current.value = bool(dm)
             self.direct_mode_switch.current.update()
-            # 触发联动：如果开启直接拉群，禁用其他项
             if dm:
                 self._on_direct_mode_changed(None)
 
@@ -287,12 +357,10 @@ class ConfigPanel:
             self.fields["reply_max"].current.value = str(ri.get("max", "3"))
             self.fields["reply_max"].current.update()
 
-            # 策略
             strat = cfg.get("chat_strategy", "message_pool")
             self.strategy.current.value = strat
             self.strategy.current.update()
 
-            # 消息池
             pools = cfg.get("message_pools", [])
             cnt = len(pools) or 5
             self._pool_cnt = max(1, min(cnt, MAX_POOLS))

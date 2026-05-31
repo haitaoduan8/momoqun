@@ -1,40 +1,75 @@
-"""ADB 管理面板 — Card 包裹 + 圆角按钮。"""
+"""ADB 管理面板 — Neon Aurora 风格，聚光灯效果 + 青色光效。"""
 
 import flet as ft
 import threading
 import requests
 from ui.theme import (
-    BG_CARD, BORDER, TEXT, TEXT_SECONDARY, TEXT_MUTED,
-    ACCENT, ACCENT_HOVER, SUCCESS, DANGER, BTN_RADIUS,
+    BG_CARD, BG_INPUT, BG_HOVER, BORDER, BORDER_FOCUS, BORDER_GLOW, DIVIDER,
+    TEXT, TEXT_SECONDARY, TEXT_MUTED, TEXT_ACCENT,
+    ACCENT, ACCENT_DIM, ACCENT_GLOW, SUCCESS, SUCCESS_DIM, DANGER, DANGER_DIM,
+    BTN_RADIUS, CARD_RADIUS, INPUT_RADIUS, ICON_RADIUS,
+    accent_btn, outline_btn, form_input, section_title, icon_badge, separator,
 )
 
 API = "http://localhost:5100"
 
 
-def _btn(text, on_click, color=ACCENT, height=36):
-    return ft.ElevatedButton(
-        text=text,
-        on_click=on_click,
-        bgcolor=color,
-        color="#ffffff",
-        height=height,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            padding=ft.padding.symmetric(horizontal=16),
-        ),
-    )
-
-
-def _outline_btn(text, on_click, height=34):
-    return ft.OutlinedButton(
-        text=text,
-        on_click=on_click,
-        height=height,
-        style=ft.ButtonStyle(
-            color=TEXT_SECONDARY,
-            side=ft.BorderSide(1, BORDER),
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            padding=ft.padding.symmetric(horizontal=14),
+def _device_row(serial, on_init, on_add, on_disc):
+    """单个扫描到的设备行 - 青色发光边框。"""
+    return ft.Container(
+        content=ft.Row([
+            ft.Container(
+                content=ft.Icon(ft.Icons.PHONE_ANDROID, size=18, color=ACCENT),
+                bgcolor=ACCENT_DIM,
+                border_radius=ICON_RADIUS,
+                padding=10,
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=12,
+                    color=ACCENT_GLOW,
+                ),
+            ),
+            ft.Text(serial, size=12, color=TEXT, expand=True, font_family="monospace",
+                    overflow=ft.TextOverflow.ELLIPSIS),
+            ft.Row([
+                ft.TextButton(
+                    "初始化",
+                    on_click=lambda e, s=serial: on_init(s),
+                    style=ft.ButtonStyle(
+                        color=ACCENT,
+                        text_style=ft.TextStyle(size=11, weight="w600"),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    ),
+                ),
+                ft.TextButton(
+                    "添加",
+                    on_click=lambda e, s=serial: on_add(s),
+                    style=ft.ButtonStyle(
+                        color=SUCCESS,
+                        text_style=ft.TextStyle(size=11, weight="w600"),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    ),
+                ),
+                ft.TextButton(
+                    "断开",
+                    on_click=lambda e, s=serial: on_disc(s),
+                    style=ft.ButtonStyle(
+                        color=DANGER,
+                        text_style=ft.TextStyle(size=11, weight="w600"),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    ),
+                ),
+            ], spacing=0),
+        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        bgcolor=BG_CARD,
+        border_radius=CARD_RADIUS,
+        padding=ft.padding.symmetric(horizontal=18, vertical=14),
+        border=ft.border.all(1, BORDER),
+        shadow=ft.BoxShadow(
+            spread_radius=0,
+            blur_radius=15,
+            color=ft.Colors.with_opacity(0.2, ft.Colors.BLACK),
+            offset=ft.Offset(0, 4),
         ),
     )
 
@@ -44,40 +79,49 @@ class ADBPanel:
         self.status = ft.Ref[ft.Text]()
         self.addr = ft.Ref[ft.TextField]()
         self.dev_list = ft.Ref[ft.Column]()
-        self._device_list = device_list  # DeviceList 引用，用于添加后刷新
+        self._device_list = device_list
 
     def build(self):
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("ADB 管理", size=15, weight="bold", color=TEXT),
-                    ft.Divider(height=1, color=BORDER),
-                    ft.Row([
-                        ft.TextField(
-                            ref=self.addr,
-                            hint_text="127.0.0.1:7555",
-                            border_color=BORDER,
-                            bgcolor=BG_CARD,
-                            color=TEXT,
-                            text_size=14,
-                            expand=True,
-                            height=40,
-                            content_padding=ft.Padding(left=12, top=0, right=12, bottom=0),
-                        ),
-                        _btn("连接", self._connect),
-                    ], spacing=8),
-                    ft.Row([
-                        _outline_btn("扫描设备", self._scan),
-                        ft.Text(ref=self.status, size=13, color=TEXT_SECONDARY),
-                    ], spacing=8),
-                    ft.Divider(height=1, color=BORDER),
-                    ft.Column(ref=self.dev_list, spacing=6),
-                ], spacing=10),
-                padding=20,
+        return ft.Container(
+            content=ft.Column([
+                # 标题区
+                section_title("ADB 设备管理", ft.Icons.PHONE_ANDROID),
+
+                # 连接输入行
+                ft.Container(
+                    content=ft.Row([
+                        form_input(self.addr, hint="127.0.0.1:7555", height=44),
+                        accent_btn("连接", self._connect, icon=ft.Icons.LINK, height=44),
+                    ], spacing=12),
+                    padding=ft.padding.only(top=18),
+                ),
+
+                # 扫描按钮 + 状态
+                ft.Container(
+                    content=ft.Row([
+                        outline_btn("扫描设备", self._scan, height=38),
+                        ft.Container(expand=True),
+                        ft.Text(ref=self.status, size=11, color=TEXT_MUTED, weight="w500"),
+                    ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.only(top=10),
+                ),
+
+                # 分割线
+                separator(),
+
+                # 设备列表
+                ft.Column(ref=self.dev_list, spacing=10),
+            ], spacing=0),
+            bgcolor=BG_CARD,
+            border_radius=CARD_RADIUS,
+            padding=ft.padding.symmetric(horizontal=28, vertical=24),
+            border=ft.border.all(1, BORDER),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=25,
+                color=ft.Colors.with_opacity(0.25, ft.Colors.BLACK),
+                offset=ft.Offset(0, 6),
             ),
-            color=BG_CARD,
-            elevation=0,
-            margin=10,
         )
 
     # ─── API ───
@@ -107,23 +151,50 @@ class ADBPanel:
         try:
             r = requests.get(f"{API}/api/adb/devices", timeout=10)
             devs = r.json().get("devices", [])
+
+            added_serials: set = set()
+            try:
+                r2 = requests.get(f"{API}/api/devices", timeout=5)
+                if r2.ok:
+                    body = r2.json()
+                    if isinstance(body, list):
+                        added_serials = {
+                            (x.get("serial") or "") for x in body if isinstance(x, dict)
+                        }
+            except Exception:
+                pass
+
+            pending = [d for d in devs if (d.get("serial") or "") not in added_serials]
+
             items = []
-            for d in devs:
+            for d in pending:
                 s = d.get("serial", "")
-                items.append(ft.Row([
-                    ft.Text(s, size=13, color=TEXT, expand=True),
-                    ft.TextButton("初始化", on_click=lambda e, ser=s: self._init(ser),
-                                  style=ft.ButtonStyle(color=ACCENT)),
-                    ft.TextButton("添加", on_click=lambda e, ser=s: self._add(ser),
-                                  style=ft.ButtonStyle(color=SUCCESS)),
-                    ft.TextButton("断开", on_click=lambda e, ser=s: self._disc(ser),
-                                  style=ft.ButtonStyle(color=DANGER)),
-                ], spacing=6))
+                items.append(_device_row(s, self._init, self._add, self._disc))
             if not items:
-                items = [ft.Text("无设备", size=13, color=TEXT_MUTED)]
+                if devs:
+                    hint = ft.Text(
+                        f"扫描到 {len(devs)} 台设备，均已添加到右侧",
+                        size=12, color=TEXT_MUTED, weight="w500",
+                    )
+                else:
+                    hint = ft.Text("未发现设备", size=12, color=TEXT_MUTED, weight="w500")
+                items = [
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Container(
+                                content=ft.Icon(ft.Icons.DEVICE_UNKNOWN, size=22, color=TEXT_MUTED),
+                                bgcolor=ACCENT_DIM,
+                                border_radius=ICON_RADIUS,
+                                padding=10,
+                            ),
+                            hint,
+                        ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        padding=ft.padding.symmetric(vertical=14),
+                    )
+                ]
             self.dev_list.current.controls = items
             self.dev_list.current.update()
-            self._status("扫描完成", TEXT_SECONDARY)
+            self._status("扫描完成", TEXT_MUTED)
         except Exception as ex:
             self._status(str(ex), DANGER)
 
@@ -148,8 +219,10 @@ class ADBPanel:
             r = requests.post(f"{API}/api/devices/add", json={"serial": ser, "name": ser}, timeout=10)
             d = r.json()
             self._status(f"{ser} 已添加" if d.get("ok") else d.get("error", "失败"), SUCCESS if d.get("ok") else DANGER)
-            if d.get("ok") and self._device_list:
-                self._device_list.refresh()
+            if d.get("ok"):
+                if self._device_list:
+                    self._device_list.refresh()
+                self._sc()
         except Exception as ex:
             self._status(str(ex), DANGER)
 

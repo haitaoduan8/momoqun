@@ -1,13 +1,12 @@
 """招呼扫描与逐个通过。"""
 
 import logging
-import random
 import time
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 from core.driver import DeviceHandler
-from utils.helpers import parse_bounds, random_delay
+from utils.helpers import ElementsConfig, parse_bounds, random_delay
 
 
 class GreetingScanner:
@@ -17,32 +16,29 @@ class GreetingScanner:
         self.driver = driver
         self.elements = elements
         self.settings = settings
+        self._ec = ElementsConfig(elements)
         self._logger = logging.getLogger("greeter")
 
-    # ------------------------ 元素配置读取 ------------------------
+    # ------------------------ 元素配置读取（委托 ElementsConfig）-------------------------
     def _get_rid(self, *path: str) -> Optional[str]:
-        node: any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("resourceId") or None
-        return None
+        return self._ec.get_rid(*path)
 
     def _get_text(self, *path: str) -> Optional[str]:
-        node: any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("text") or None
-        return None
+        return self._ec.get_text(*path)
 
     # ------------------------ 核心方法 ------------------------
     def scan_badge(self) -> int:
-        """扫描聊天列表页「收到的招呼」的角标数字。返回 >=0，异常时 0。"""
+        """扫描聊天列表页「收到的招呼」的未读角标。返回 >=0，异常时 0。
+
+        判定语义（严格）：
+          - 必须同时满足「入口节点存在」**且**「同行内存在 ``red_dot``
+            (``chatlist_item_tv_status_new``) 节点」，才算有新招呼；
+          - 若入口同行的下方/旁边 ``chatlist_item_tv_content`` 文本为
+            「暂无新招呼」之类，直接返回 0；
+          - 兜底：找到 badge 节点但 text/content-desc 都不是数字 → 返回 1。
+
+        历史上这里的兜底把"找到入口"误当成"有新招呼"，导致每轮假阳性进招呼页。
+        """
         try:
             entry_text = self._get_text("entry_elements", "sayhi_entry")
             badge_rid = self._get_rid("entry_elements", "red_dot")
@@ -69,6 +65,21 @@ class GreetingScanner:
             _l, _t, _r, bt = name_bounds
             target_center_y = (_t + bt) // 2
 
+            # 早返：同行内若有「暂无新招呼」之类文本，直接 0
+            for node in root.iter():
+                t = (node.attrib.get("text") or "").strip()
+                if not t:
+                    continue
+                if "暂无新招呼" not in t:
+                    continue
+                b = parse_bounds(node.attrib.get("bounds", ""))
+                if not b:
+                    continue
+                node_cy = (b[1] + b[3]) // 2
+                if abs(node_cy - target_center_y) < 200:
+                    self._logger.debug("scan_badge: 同行检出「暂无新招呼」")
+                    return 0
+
             # 在同行内（center_y 接近）找 badge 节点
             for node in root.iter():
                 rid = node.attrib.get("resource-id", "")
@@ -93,10 +104,14 @@ class GreetingScanner:
                             return int(cd)
                         except ValueError:
                             pass
+                    # 找到 badge 但文本不是数字 → 至少 1 个
+                    self._logger.info(
+                        "scan_badge: 找到 red_dot 节点但 text/content-desc 非数字，假定 1 个"
+                    )
+                    return 1
 
-            # 找到了「收到的招呼」入口但角标读不出数字 → 至少有 1 个新招呼
-            self._logger.info("scan_badge: 找到「%s」但未解析到数字，假定至少 1 个", entry_text)
-            return 1
+            # 入口存在但同行无 red_dot → 没有新招呼
+            return 0
         except Exception:
             logging.exception("scan_badge 异常")
             return 0
@@ -238,40 +253,8 @@ class GreetingScanner:
             return None
 
     def go_back_to_chat_list(self) -> bool:
-        """从任意界面按 back 返回到聊天列表。最多 4 次。
-
-        同时检测 chat_row 存在 且 accept_button 不存在，
-        以区分主聊天列表和招呼子页面（两者都有 chat_row）。
-        """
-        try:
-            row_rid = self._get_rid("chat_list", "chat_row")
-            accept_rid = self._get_rid("buttons", "accept_button")
-            for i in range(4):
-                try:
-                    self.driver.d.press("back")
-                except Exception:
-                    self._logger.debug("back 按键异常", exc_info=True)
-                time.sleep(random.uniform(0.5, 1.0))
-                self.driver.wait_ui_stable(max_wait=1.0)
-                try:
-                    xml = self.driver.d.dump_hierarchy()
-                    if row_rid and row_rid in xml:
-                        # 招呼子页面也有 chat_row，但还有 accept_button
-                        if accept_rid and accept_rid in xml:
-                            self._logger.debug(
-                                "back 后仍在招呼子页面（检测到 accept_button），继续 back"
-                            )
-                            continue
-                        self._logger.info(
-                            "go_back_to_chat_list: 已回到主聊天列表 (尝试 %d 次)", i + 1
-                        )
-                        return True
-                except Exception:
-                    self._logger.debug("dump hierarchy 检测异常", exc_info=True)
-            self._logger.warning(
-                "go_back_to_chat_list: 多次 back 后仍未回到主聊天列表"
-            )
-            return False
-        except Exception:
-            logging.exception("go_back_to_chat_list 异常")
-            return False
+        """从任意界面按 back 返回到聊天列表。"""
+        from utils.helpers import go_back_to_chat_list as _shared_back
+        return _shared_back(
+            self.driver, self.elements, max_backs=4, logger=self._logger,
+        )

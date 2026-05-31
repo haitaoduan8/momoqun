@@ -94,30 +94,11 @@ def main():
 
     import logging
 
-    # 日志文件（console=False 时无控制台，写文件用于诊断）
+    # 日志初始化
     _log_file = os.path.join(BASE_DIR, "momoqun.log")
-    _log_stream = open(_log_file, "w", encoding="utf-8", buffering=1)  # 行缓冲，立即落盘
-    _log_fh = logging.StreamHandler(_log_stream)
-    _log_fh.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    ))
-
-    _root_logger = logging.getLogger()
-    _root_logger.setLevel(logging.DEBUG)
-    _root_logger.addHandler(_log_fh)
-
-    # 也加一个 console handler（如果 stdout 可用）
-    if sys.stdout and not isinstance(sys.stdout, io.TextIOWrapper) or (
-        isinstance(sys.stdout, io.TextIOWrapper)
-        and not isinstance(sys.stdout.buffer, _NullIO)
-    ):
-        _console = logging.StreamHandler()
-        _console.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%H:%M:%S",
-        ))
-        _root_logger.addHandler(_console)
+    from utils.helpers import setup_logging as _setup_log
+    _setup_log(level=logging.DEBUG, log_file=_log_file, file_mode="w")
+    _root_logger = logging.getLogger("momoqun")
 
     _root_logger.info("momoqun starting...")
     _root_logger.info("BASE_DIR: %s", BASE_DIR)

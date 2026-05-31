@@ -27,6 +27,7 @@ from core.driver import DeviceHandler
 from core.message_pool import MessagePoolManager
 from core.traversal import Candidate, CandidateSource, TraversalRunner, TraversalReport
 from data.storage import StorageHandler
+from utils.helpers import ElementsConfig
 
 BOUNDS_RE = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
@@ -74,6 +75,7 @@ class ChatListUiSource(CandidateSource):
     ) -> None:
         self.driver = driver
         self.elements = elements or {}
+        self._ec = ElementsConfig(elements or {})
         self.already_done = already_done
         self.full_list_mode = bool(full_list_mode)
         self._external_scroll_to_top = scroll_to_top
@@ -117,26 +119,12 @@ class ChatListUiSource(CandidateSource):
         values = (cand.name, cand.uid)
         return any(str(v).strip() in self.ignore_names for v in values if v is not None)
 
-    # ------------------------ 元素配置读取 ------------------------
+    # ------------------------ 元素配置读取（委托 ElementsConfig）-------------------------
     def _get_rid(self, *path: str) -> Optional[str]:
-        node: Any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("resourceId")
-        return None
+        return self._ec.get_rid(*path)
 
     def _get_text(self, *path: str) -> Optional[str]:
-        node: Any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("text")
-        return None
+        return self._ec.get_text(*path)
 
     @staticmethod
     def _root_has_resource_id(root: ET.Element, rid: str) -> bool:
@@ -526,6 +514,7 @@ class ChatFlow:
         self.settings = settings or {}
         self.pool = pool
         self.storage = storage
+        self._ec = ElementsConfig(elements or {})
         self.log = logger or logging.getLogger(__name__)
 
     # ------------------------ 内部工具 ------------------------
@@ -542,24 +531,10 @@ class ChatFlow:
         time.sleep(random.uniform(lo, hi))
 
     def _get_rid(self, *path: str) -> Optional[str]:
-        node: Any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("resourceId")
-        return None
+        return self._ec.get_rid(*path)
 
     def _get_text(self, *path: str) -> Optional[str]:
-        node: Any = self.elements
-        for key in path:
-            if not isinstance(node, dict):
-                return None
-            node = node.get(key)
-        if isinstance(node, dict):
-            return node.get("text")
-        return None
+        return self._ec.get_text(*path)
 
     def _cfg_int(self, key: str, default: int) -> int:
         try:
@@ -702,23 +677,27 @@ class ChatFlow:
 
             entry = self.storage.get_friend(cand.uid) or {}
             cr = int(entry.get("chat_round") or 0)
+            huiguan_enabled = self.settings.get("huiguan_enabled", False)
             huiguan_round = self._cfg_int("huiguan_message_round", 0)
             huiguan_text = (self.settings.get("invite_back_message") or "").strip()
             huiguan_sent = entry.get("huiguan_sent", False)
 
-            # ---- 已发回关话术：仅检测互关，不回复 ----
+            # ---- 已发回关话术：跳过，互关检测由 Phase 3 处理 ----
             if huiguan_sent:
-                self._check_mutual_only(cand, round_, input_rid, send_rid)
                 return True
 
+            # ---- 回关邀请功能已关闭：跳过回关逻辑，正常按消息池对话 ----
+            if not huiguan_enabled:
+                # 直接进入正常消息逻辑
+                pass
             # ---- 到达回关轮次 → 发回关邀请话术 ----
-            if huiguan_round > 0 and cr >= huiguan_round:
+            elif huiguan_round > 0 and cr >= huiguan_round:
                 if huiguan_text:
                     if not self.send_message(huiguan_text):
                         return False
                     self.log.info("reply_one: 已发回关话术 → %s", cand.name or cand.uid)
                 self.storage.upsert(cand.uid, {"huiguan_sent": True})
-                self._check_mutual_only(cand, round_, input_rid, send_rid)
+                # 互关检测统一由 Phase 3 处理，Step B 只负责发消息
                 return True
 
             # ---- 正常消息 ----
@@ -751,22 +730,6 @@ class ChatFlow:
             return False
         finally:
             self._safe_back()
-
-    def _check_mutual_only(self, cand: Candidate, round_: int,
-                           input_rid: str, send_rid: str) -> None:
-        """仅检测互关状态（不发送消息），用于回关话术发送后的阶段。"""
-        try:
-            from actions.mutual_friend import detect_mutual_friend_by_voice_button
-            result = detect_mutual_friend_by_voice_button(
-                self.driver, self.elements, restore_text_mode=True
-            )
-            if result and result.get("status") == "mutual":
-                self.storage.mark_status(cand.uid, "mutual", name=cand.name)
-                self.log.info("_check_mutual_only: %s 已是互关", cand.name or cand.uid)
-            else:
-                self.log.info("_check_mutual_only: %s 尚未互关", cand.name or cand.uid)
-        except Exception:
-            self.log.exception("_check_mutual_only 异常 uid=%s", cand.uid)
 
     # ------------------------ 遍历回复入口 ------------------------
     def reply_all_new(
@@ -806,10 +769,11 @@ class ChatFlow:
             cr = int(entry.get("chat_round") or 0)
             S = self._cfg_int("max_chat_rounds", 10)
             status = entry.get("status") or ""
+            huiguan_enabled = self.settings.get("huiguan_enabled", False)
             if status == "done":
                 return True
-            # 已发送回关话术 → 不再回复，仅检测互关
-            if entry.get("huiguan_sent"):
+            # 已发送回关话且回关功能开启 → 不再回复，仅检测互关
+            if huiguan_enabled and entry.get("huiguan_sent"):
                 return True
             # cr=0 → 需要破冰
             if cr == 0:
@@ -825,8 +789,9 @@ class ChatFlow:
             if entry is None:
                 return False
             cr = int(entry.get("chat_round") or 0)
-            # 已发回关话术 → 有新消息才进入（仅检测互关，不回复）
-            if entry.get("huiguan_sent"):
+            huiguan_enabled = self.settings.get("huiguan_enabled", False)
+            # 已发回关话且回关功能开启 → 有新消息才进入（仅检测互关，不回复）
+            if huiguan_enabled and entry.get("huiguan_sent"):
                 return bool(cand.meta.get("has_unread"))
             # cr=0 → 始终可见（需要破冰）
             if cr == 0:

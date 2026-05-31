@@ -113,6 +113,28 @@ group_invite:
   cancel_text: "取消"
   member_tab_text: "好友"
 
+# 账号检测（2026-05-28 真机 dump 验证，陌陌 OnePlus + 渠道包）
+# 流程：底部"更多"tab → 左上头像（无 resource-id，按屏幕比例点）→ 个人主页详情页 →
+# 查找顶部 banner 文案"账号存在异常"。命中即标记异常。
+account_check:
+  # 底部"更多"tab 容器
+  more_tab:
+    resourceId: "com.immomo.momo:id/maintab_layout_profile"
+  # 左上头像无 resource-id，使用屏幕宽/高比例做跨分辨率适配
+  # 真机参考：1080x2400 上头像中心 ~(110, 330) → 比例 (0.102, 0.137)
+  avatar_xy_ratio:
+    x: 0.102
+    y: 0.137
+  # 详情页顶部 banner（异常时出现，正常时不存在）
+  abnormal_banner_keyword: "账号存在异常"
+  # 详情页"已加载成功"的探测锚点（任一命中即视为页面已就绪）
+  detail_ready_markers:
+    - "com.immomo.momo:id/personal_profile_name"
+    - "com.immomo.momo:id/toolbar_title"
+  # toolbar 返回按钮（返回到"更多"tab）
+  back_button:
+    resourceId: "com.immomo.momo:id/iv_back"
+
 # 拉黑好友（2026-05-21 真机 dump 验证）
 block_friend:
   # 对话框右上角头像按钮

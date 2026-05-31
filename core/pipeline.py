@@ -53,20 +53,25 @@ class SessionRound:
         elements: dict,
         settings: dict,
         storage: StorageHandler,
+        serial: Optional[str] = None,
     ) -> None:
         self.driver = driver
         self.elements = elements
         self.settings = settings
         self.storage = storage
+        # per-device state 路径键。优先使用显式 serial，否则从 storage 反推。
+        self.serial: Optional[str] = serial or getattr(storage, "serial", None)
 
         # 保留 greeter 用于招呼处理（Phase 1）
         self.greeter = GreetingScanner(driver, elements, settings)
         # 保留 chatter 用于 _scroll_to_top 等辅助方法
-        self.chatter = OneOnOneChatter(driver, elements, settings, storage)
+        self.chatter = OneOnOneChatter(
+            driver, elements, settings, storage, serial=self.serial
+        )
         self.inviter = GroupInviter(driver, elements, settings)
 
         try:
-            self._pool = MessagePoolManager(settings, state_path="data/state.json")
+            self._pool = MessagePoolManager(settings, serial=self.serial)
         except Exception:
             logging.exception("SessionRound 消息池初始化失败")
             self._pool = None
@@ -244,7 +249,7 @@ class SessionRound:
 
     def _phase3_follow_and_mutual(self) -> None:
         """遍历 friends.json：
-          - 直接拉群模式：status=="accepted" → 立即关注+邀请+拉黑
+          - 直接拉群模式：status=="accepted" → 直接邀请进群 + 拉黑
           - 普通模式：chat_round >= N 且 status=="accepted" → 点关注
           - status=="followed" → 检测互关 → 互关则邀请进群 + 拉黑 → done
         """
@@ -266,12 +271,9 @@ class SessionRound:
                 chat_round = int(friend.get("chat_round") or 0)
                 name = friend.get("name") or uid
 
-                # 直接拉群模式：跳过聊天，直接关注+检测互关
+                # 直接拉群模式：通过招呼后直接邀请进群
                 if direct_mode and status in ("accepted",):
-                    self._logger.info("Phase 3: %s 直接拉群模式 → 点关注", name)
-                    self._do_follow(uid, name, chat_round)
-                    # 关注后立即检测互关
-                    self._do_mutual_check(uid, name)
+                    self._do_direct_invite(uid, name)
                 elif not direct_mode and status == "accepted" and chat_round >= self.N:
                     self._do_follow(uid, name, chat_round)
                 elif status == "followed":
@@ -352,6 +354,32 @@ class SessionRound:
                 "Phase 3: %s 尚未互关 (%s)，下轮再检", name, result.reason
             )
             self.chatter.go_back_to_chat_list()
+
+    def _do_direct_invite(self, uid: str, name: str) -> None:
+        """直接拉群模式：跳过关注和互关检测，直接邀请进群 + 拉黑。"""
+        self.current_phase = Phase.INVITING_TO_GROUP
+        self._logger.info("Phase 3: %s 直接拉群模式 → 邀请进群", name)
+
+        group_name = self.settings.get("group_name", "")
+        if not group_name:
+            self._logger.warning("未配置 group_name，跳过")
+            return
+
+        if self.inviter.enter_group_info_directly(group_name):
+            if self.inviter.open_invite_panel():
+                if self.inviter.select_friend(name):
+                    self.inviter.confirm_invite()
+                else:
+                    self._logger.warning("未在邀请面板找到 %s", name)
+            else:
+                self._logger.warning("无法打开邀请面板")
+        else:
+            self._logger.warning("无法进入群信息页「%s」", group_name)
+        self.inviter.go_back_to_chat_list()
+
+        self.inviter.block_friend(name)
+        self.storage.mark_status(uid, "done", name=name)
+        self._logger.info("Phase 3: %s 已完成（邀请+拉黑）", name)
 
     # ------------------------------------------------------------------
     # Phase 4 — 等待下一轮

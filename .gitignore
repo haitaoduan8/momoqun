@@ -11,3 +11,17 @@ __pycache__/
 .idea/
 .vscode/
 *.log
+
+# macOS
+.DS_Store
+
+# 运行时数据（per-device 好友/状态与归档）
+data/friends/
+data/state/
+data/archive/
+
+# Web UI (Next.js)
+webui/node_modules/
+webui/.next/
+webui/out/
+webui/.env.local
