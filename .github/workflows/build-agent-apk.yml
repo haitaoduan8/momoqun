@@ -24,16 +24,20 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
+
+      - name: Generate Gradle Wrapper
+        working-directory: agent-android
+        run: |
+          # gradle-wrapper.properties 已有，生成 wrapper 脚本
+          gradle wrapper --gradle-version 8.7
 
       - name: Build Debug APK
         working-directory: agent-android
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
 
       - name: Build Release APK
         working-directory: agent-android
-        run: gradle assembleRelease
+        run: ./gradlew assembleRelease
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
