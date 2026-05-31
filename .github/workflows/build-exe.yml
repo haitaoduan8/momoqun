@@ -24,7 +24,7 @@ jobs:
       - name: Build Next.js frontend
         working-directory: webui
         run: |
-          npm ci
+          npm install
           npm run build
 
       - name: Setup Python 3.12
