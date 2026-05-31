@@ -23,18 +23,18 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Install Gradle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gradle
 
       - name: Generate Gradle Wrapper
         working-directory: agent-android
-        run: |
-          # gradle-wrapper.properties 已有，生成 wrapper 脚本
-          gradle wrapper --gradle-version 8.7
+        run: gradle wrapper --gradle-version 8.7
 
       - name: Build Debug APK
         working-directory: agent-android
-        run: ./gradlew assembleDebug
+        run: chmod +x gradlew && ./gradlew assembleDebug
 
       - name: Build Release APK
         working-directory: agent-android

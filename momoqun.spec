@@ -26,8 +26,8 @@ for _p in _apk_candidates:
         _agent_datas.append((_p, 'agent-bundle'))
         break
 else:
-    print('[spec] WARN agent APK 未找到（agent-android 工程尚未编译）；'
-          'dist 内将缺少 agent-bundle/app-*.apk。')
+    print('[spec] WARN: agent APK not found (agent-android not built); '
+          'agent-bundle/app-*.apk will be missing from dist.')
 
 # 协议规范与压测工具：路径存在才打进去
 for _src, _dst in (
