@@ -106,6 +106,7 @@ def main():
     import uvicorn
 
     port = 5100
+    server.MASTER_PORT = port  # 让 /api/master-address 拼出正确端口
     config = uvicorn.Config(server.app, host="0.0.0.0", port=port,
                             log_level="info", log_config=None)
     srv = uvicorn.Server(config)

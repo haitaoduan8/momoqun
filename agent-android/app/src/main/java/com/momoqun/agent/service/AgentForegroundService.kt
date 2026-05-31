@@ -27,6 +27,11 @@ class AgentForegroundService : LifecycleService() {
 
     @Volatile private var ws: WsClient? = null
     @Volatile private var dispatcher: RpcDispatcher? = null
+    /** 当前 WsClient 实际连接的 URL，用于判断配置是否变化。 */
+    @Volatile private var currentUrl: String? = null
+    /** 当前 master 基址，仅用于通知文案（避免多次 launch 收集器）。 */
+    @Volatile private var currentMasterUrl: String = ""
+    private var statusCollectorStarted = false
     private val statusFlow = MutableStateFlow("idle")
 
     override fun onBind(intent: Intent): IBinder? {
@@ -48,12 +53,28 @@ class AgentForegroundService : LifecycleService() {
             stopSelf()
             return
         }
+        currentMasterUrl = cfg.masterUrl
         startForeground(AgentApp.NOTIFICATION_ID, buildNotification(cfg.masterUrl))
         isRunning = true
 
         if (dispatcher == null) dispatcher = RpcDispatcher(applicationContext)
-        if (ws != null) return
 
+        // 通知状态收集器只启动一次；用 currentMasterUrl 取最新地址，避免重建时重复 launch。
+        if (!statusCollectorStarted) {
+            statusCollectorStarted = true
+            lifecycleScope.launch {
+                statusFlow.collectLatest { s ->
+                    updateNotification("$s — $currentMasterUrl")
+                }
+            }
+        }
+
+        // 配置未变且已在运行 → 复用现有连接；配置变了（或首次）→ 重建。
+        if (ws != null && currentUrl == cfg.websocketUrl) return
+        ws?.shutdown()
+        ws = null
+
+        currentUrl = cfg.websocketUrl
         val client = WsClient(
             url = cfg.websocketUrl,
             onStatus = { s ->
@@ -64,17 +85,12 @@ class AgentForegroundService : LifecycleService() {
         )
         ws = client
         client.start()
-
-        lifecycleScope.launch {
-            statusFlow.collectLatest { s ->
-                updateNotification("$s — ${cfg.masterUrl}")
-            }
-        }
     }
 
     private fun stopAgent() {
         ws?.shutdown()
         ws = null
+        currentUrl = null
         isRunning = false
         broadcast("stopped", null)
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -84,6 +100,7 @@ class AgentForegroundService : LifecycleService() {
     override fun onDestroy() {
         ws?.shutdown()
         ws = null
+        currentUrl = null
         isRunning = false
         super.onDestroy()
     }

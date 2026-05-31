@@ -77,7 +77,7 @@ adb -s 127.0.0.1:5555 install -r app-debug.apk
 然后在该模拟器里：
 
 1. 打开 **MomoQun Agent**。
-2. 在「Master 地址」填 `ws://<windows_host_ip>:8080`（在 Windows 上跑 master 的 IP）。
+2. 在「Master 地址」填 `ws://<windows_host_ip>:5100`（在 Windows 上跑 master 的 IP）。
    - 模拟器内访问宿主机：雷电/夜神/mumu 默认是宿主机 IP；
    - Android Studio AVD 用 `10.0.2.2`（虚拟网关）。
 3. 在「Serial」填这个模拟器的 ADB 序列号（如 `127.0.0.1_5555`，**冒号要替换成下划线**）。
@@ -91,7 +91,7 @@ adb -s 127.0.0.1:5555 install -r app-debug.apk
 Windows 上 master 跑起来后：
 
 ```bash
-curl http://localhost:8080/api/agents
+curl http://localhost:5100/api/agents
 # => {"agents":[{"serial":"127.0.0.1_5555","connected_for_s":12.3, ...}]}
 ```
 

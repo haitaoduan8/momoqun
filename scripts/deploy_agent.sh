@@ -4,8 +4,8 @@
 # 用于路线 C：APK Agent + Python Master。
 #
 # 用法：
-#   ./scripts/deploy_agent.sh -m ws://192.168.1.50:8080
-#   ./scripts/deploy_agent.sh -m ws://10.0.2.2:8080 -a ./agent-bundle/app-release.apk
+#   ./scripts/deploy_agent.sh -m ws://192.168.1.50:5100
+#   ./scripts/deploy_agent.sh -m ws://10.0.2.2:5100 -a ./agent-bundle/app-release.apk
 #   ./scripts/deploy_agent.sh -m ws://... --skip-install   # 已装过 APK，仅推 config
 
 set -euo pipefail

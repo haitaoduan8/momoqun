@@ -12,7 +12,7 @@
     momoqun-agent.apk 的本地路径（默认从 EXE 同级的 agent-bundle/ 找）。
 
 .PARAMETER MasterUrl
-    master 的 WebSocket 基址，例如 ws://192.168.1.100:8080。
+    master 的 WebSocket 基址，例如 ws://192.168.1.100:5100。
     在模拟器内访问宿主机时：
       - 雷电 / mumu / 夜神 / BlueStacks → 宿主机 LAN IP
       - Android Studio AVD → 10.0.2.2
@@ -24,7 +24,7 @@
     adb.exe 路径。默认用 PATH 里的。
 
 .EXAMPLE
-    .\scripts\deploy_agent.ps1 -MasterUrl ws://192.168.1.50:8080
+    .\scripts\deploy_agent.ps1 -MasterUrl ws://192.168.1.50:5100
 #>
 
 [CmdletBinding()]

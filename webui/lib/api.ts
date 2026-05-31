@@ -23,6 +23,31 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   return response.json();
 }
 
+// ============ Master 地址（路线 C：下发给模拟器 Agent） ============
+
+export interface MasterAddress {
+  addresses: string[];
+  port: number;
+  ws_urls: string[];
+}
+
+export async function getMasterAddress(): Promise<MasterAddress> {
+  return fetchAPI("/api/master-address");
+}
+
+// ============ 在线 Agent（路线 C WebSocket，非 ADB 设备） ============
+
+export interface OnlineAgent {
+  serial: string;
+  connected_for_s: number;
+  idle_for_s: number;
+  pending_rpc: number;
+}
+
+export async function getAgents(): Promise<{ agents: OnlineAgent[] }> {
+  return fetchAPI("/api/agents");
+}
+
 // ============ ADB 设备管理 ============
 
 export interface AdbDevice {

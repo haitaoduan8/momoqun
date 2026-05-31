@@ -12,7 +12,7 @@ import com.momoqun.agent.AgentConfig
  *
  * ```bash
  * adb shell am broadcast -a com.momoqun.agent.SET_CONFIG \
- *     --es master_url "ws://10.0.2.2:8080" \
+ *     --es master_url "ws://10.0.2.2:5100" \
  *     --es serial "127.0.0.1_5555" \
  *     --ez autostart true \
  *     -n com.momoqun.agent/.service.ConfigReceiver

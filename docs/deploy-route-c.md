@@ -57,7 +57,7 @@ pyinstaller momoqun.spec
 
 ### 4.1 Windows 防火墙
 
-放行 `momoqun.exe` 的入站规则（默认监听 `0.0.0.0:8080`，可在 `config/settings.yaml`
+放行 `momoqun.exe` 的入站规则（默认监听 `0.0.0.0:5100`，可在 `config/settings.yaml`
 里改）。简单做法：
 
 ```powershell
@@ -70,8 +70,8 @@ New-NetFirewallRule -DisplayName "momoqun-master" `
 或者按端口放行（如果 master 不需要被外网 access，仅限内网 LAN）：
 
 ```powershell
-New-NetFirewallRule -DisplayName "momoqun-master-8080" `
-    -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8080 `
+New-NetFirewallRule -DisplayName "momoqun-master-5100" `
+    -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5100 `
     -RemoteAddress LocalSubnet
 ```
 
@@ -84,12 +84,12 @@ cd C:\path\to\dist\momoqun
 momoqun.exe
 ```
 
-打开浏览器看 `http://localhost:8080` 验证 UI 起来了。
+打开浏览器看 `http://localhost:5100` 验证 UI 起来了。
 
 ### 4.3 健康检查
 
 ```powershell
-curl http://localhost:8080/api/agents
+curl http://localhost:5100/api/agents
 # 期望：{"agents":[]} —— 此时还没 Agent 连进来
 ```
 
@@ -115,12 +115,12 @@ adb devices
 # Windows
 .\scripts\deploy_agent.ps1 `
     -ApkPath ".\agent-bundle\app-release.apk" `
-    -MasterUrl "ws://192.168.1.50:8080"
+    -MasterUrl "ws://192.168.1.50:5100"
 ```
 
 ```bash
 # macOS / Linux
-./scripts/deploy_agent.sh -m ws://192.168.1.50:8080 -a ./agent-bundle/app-release.apk
+./scripts/deploy_agent.sh -m ws://192.168.1.50:5100 -a ./agent-bundle/app-release.apk
 ```
 
 脚本会自动：
@@ -157,7 +157,7 @@ adb devices
 ### 5.4 验证 Agent 在线
 
 ```powershell
-curl http://localhost:8080/api/agents
+curl http://localhost:5100/api/agents
 ```
 
 期望看到所有 serial：
@@ -173,7 +173,7 @@ curl http://localhost:8080/api/agents
 
 ## 6. 业务跑起来
 
-打开 master UI（`http://localhost:8080`），在「设备列表」里点 **全部启动**。
+打开 master UI（`http://localhost:5100`），在「设备列表」里点 **全部启动**。
 
 DeviceThread 会**自动**走 agent-first 策略：
 
@@ -204,7 +204,7 @@ python stress_agent_router.py --agents 50 --workers 50 --duration 30
 
 | 症状 | 排查 |
 |------|------|
-| `curl /api/agents` 返回空 | ① 防火墙是否放行 8080；② Agent 通知里 status 是 `connecting` / `failure`？③ APK 内 master_url 是否写错； ④ `adb shell logcat -s MQAgent.WS:*` 看 WS error |
+| `curl /api/agents` 返回空 | ① 防火墙是否放行 5100；② Agent 通知里 status 是 `connecting` / `failure`？③ APK 内 master_url 是否写错； ④ `adb shell logcat -s MQAgent.WS:*` 看 WS error |
 | 业务说 `agent for serial ... not connected` | serial 不匹配：master 拿 ADB serial（`127.0.0.1:5555`），但 Agent 注册用 `127.0.0.1_5555`。router 已自动 normalize（`:` ↔ `_`），如仍报错请用 `/api/agents` 比对实际 serial 拼写 |
 | `dump_hierarchy` 返回空 | Accessibility 未启用 / 被系统回收，运行 `setup_permissions` 重新启用 |
 | `type_text` 返 `-32003 momoqun-ime not selected` | 默认 IME 不是 momoqun-ime，运行 `setup_permissions` 重新设置 |
@@ -220,7 +220,7 @@ python stress_agent_router.py --agents 50 --workers 50 --duration 30
 #    启动新 master.exe
 
 # 2. agent 端
-.\scripts\deploy_agent.ps1 -MasterUrl ws://192.168.1.50:8080
+.\scripts\deploy_agent.ps1 -MasterUrl ws://192.168.1.50:5100
 # install -r 会保留 SharedPreferences，配置不丢；
 # 新 APK 启动后自动重连 master。
 ```

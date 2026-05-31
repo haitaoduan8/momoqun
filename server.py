@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import atexit
 import collections
+import ipaddress
 import logging
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -50,6 +52,9 @@ def _get_assets_dir() -> str:
 BASE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.join(BASE, "config", "settings.yaml")
 ELEMENTS_PATH = os.path.join(BASE, "config", "elements.yaml")
+
+# 实际监听端口。由入口（app.py / server.main）写入，前端 /api/master-address 据此拼 ws_url。
+MASTER_PORT = 5100
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -192,6 +197,79 @@ def _load_elements() -> dict:
     except FileNotFoundError:
         logger.warning("元素配置文件不存在: %s，使用默认配置", ELEMENTS_PATH)
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Master 地址探测（路线 C：把 ws://<本机IP>:<port> 显示在前端供复制）
+# ---------------------------------------------------------------------------
+def _is_usable_ipv4(addr: str) -> bool:
+    """只排除回环 / APIPA(链路本地) / 非 IPv4。
+
+    不按 is_private 过滤 —— IDC/群控机房常用非 RFC1918 网段（如 53.0.3.111），
+    私网过滤会把唯一可用地址误删，导致前端空白。
+    """
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    if ip.version != 4:
+        return False
+    if ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+        return False
+    return True
+
+
+def _detect_host_ipv4() -> List[str]:
+    """探测本机可被模拟器访问的 IPv4，默认路由出口 IP 排第一。纯标准库、异常安全。"""
+    candidates: List[str] = []
+
+    # 1) 默认路由出口 IP：UDP connect 不真正发包，只让内核选源地址。
+    #    单网卡机器上这就是模拟器能访问到宿主机的那个 IP（唯一正解）。
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        primary = sock.getsockname()[0]
+        if _is_usable_ipv4(primary):
+            candidates.append(primary)
+    except Exception:
+        logger.debug("默认路由出口 IP 探测失败", exc_info=True)
+    finally:
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    # 2) 主机名解析出的其它网卡（虚拟网卡等）作为备选。
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = info[4][0]
+            if _is_usable_ipv4(addr) and addr not in candidates:
+                candidates.append(addr)
+    except Exception:
+        logger.debug("getaddrinfo 探测失败", exc_info=True)
+
+    return candidates
+
+
+@app.get("/api/master-address")
+async def api_master_address():
+    """返回本机可供模拟器 Agent 连接的 master 地址。
+
+    addresses 第一个为默认路由出口 IP（标“推荐”）；ws_urls 直接可复制下发。
+    探测失败也不抛 500，返回空列表（符合项目“全程异常捕获”约定）。
+    """
+    try:
+        addresses = _detect_host_ipv4()
+    except Exception as e:
+        logger.exception("探测本机地址失败: %s", e)
+        addresses = []
+    return {
+        "addresses": addresses,
+        "port": MASTER_PORT,
+        "ws_urls": [f"ws://{ip}:{MASTER_PORT}" for ip in addresses],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +692,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="momoqun Server")
     parser.add_argument("--port", type=int, default=5100, help="Web 端口")
     args = parser.parse_args()
+
+    global MASTER_PORT
+    MASTER_PORT = args.port
 
     def cleanup():
         logger.info("Server 退出中...")
