@@ -20,7 +20,8 @@ from typing import Any, Dict, List
 import uvicorn
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 # Windows: 禁止子进程弹出控制台窗口
@@ -119,6 +120,25 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"error": f"服务器内部错误: {exc}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# 静态前端（Next.js 导出）
+# ---------------------------------------------------------------------------
+_WEBUI_DIR = os.path.join(BASE, "webui", "out")
+
+
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join(_WEBUI_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    return JSONResponse({"error": "webui not built"}, status_code=404)
+
+
+# 挂载静态资源（_next/, 404.html 等）
+if os.path.isdir(_WEBUI_DIR):
+    app.mount("/_next", StaticFiles(directory=os.path.join(_WEBUI_DIR, "_next")), name="next-assets")
 
 
 # ---------------------------------------------------------------------------

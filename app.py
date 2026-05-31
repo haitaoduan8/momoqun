@@ -1,5 +1,5 @@
 """Windows EXE 启动脚本。
-启动 FastAPI 服务器（后台线程）+ Flet 桌面窗口。
+启动 FastAPI 服务器，自动打开浏览器访问 Web UI。
 """
 
 from multiprocessing import freeze_support
@@ -29,6 +29,7 @@ if sys.stderr is None:
 import atexit
 import threading
 import time
+import webbrowser
 
 _FLAGS = 0x08000000 if sys.platform == "win32" else 0
 _adb_exe = None
@@ -38,11 +39,6 @@ _adb_exe = None
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
     os.chdir(BASE_DIR)
-
-    # 显式设置 flet_web 路径，绕过 __file__ 在 PyInstaller 中的解析问题
-    _flet_web_path = os.path.join(BASE_DIR, "flet_web", "web")
-    if os.path.isdir(_flet_web_path):
-        os.environ["FLET_WEB_PATH"] = _flet_web_path
 
     # adb.exe 在 COLLECT 根目录（spec datas '.' 即 exe 同级目录）
     _adb_exe = os.path.join(BASE_DIR, "adb.exe")
@@ -125,38 +121,22 @@ def main():
     t = threading.Thread(target=run_server, daemon=True)
     t.start()
 
+    # 等服务器启动
     time.sleep(2)
 
-    # --- 启动 Flet 浏览器模式 ---
-    import logging
-    _log = logging.getLogger("momoqun")
-    _log.info("Starting Flet web browser...")
+    # 自动打开浏览器
+    url = f"http://localhost:{port}"
+    _root_logger.info("Opening browser: %s", url)
+    webbrowser.open(url)
+    print(f"momoqun 已启动: {url}")
 
-    import flet as ft
-    from ui.app import main as ui_main
-
-    # 诊断：flet_web 路径
+    # 阻塞主线程直到服务器退出
     try:
-        import flet_web
-        _web_dir = flet_web.get_package_web_dir()
-        _log.info("flet_web package dir: %s", os.path.dirname(flet_web.__file__))
-        _log.info("flet_web web dir: %s", _web_dir)
-        _log.info("web dir exists: %s", os.path.isdir(_web_dir))
-        if os.path.isdir(_web_dir):
-            _log.info("web dir files: %s", os.listdir(_web_dir)[:5])
-    except Exception as _e:
-        _log.warning("flet_web diag failed: %s", _e)
-
-    try:
-        ft.app(target=ui_main, view=ft.AppView.WEB_BROWSER, port=8550)
-    except Exception as _e:
-        _log.exception("Flet app crashed!")
-        raise
-
-    # Flet 退出后关闭 server
-    srv.should_exit = True
-    _cleanup_adb()
-    t.join(timeout=5)
+        stop_event.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        _cleanup_adb()
 
 
 if __name__ == "__main__":

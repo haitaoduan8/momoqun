@@ -1,21 +1,16 @@
 # PyInstaller：无控制台（windowed）。Windows 产出 dist/momoqun/momoqun.exe
 # 必须在 Windows 上构建 —— 不能在 Mac 上交叉编译 .exe
 # 构建：pip install pyinstaller && pyinstaller momoqun.spec
-# 采用 COLLECT 目录模式（非 onefile），因为运行时需要读取 webui/templates/ 和 config/
+# 采用 COLLECT 目录模式（非 onefile），因为运行时需要读取 config/ 和 webui/out/
 
 import os as _os
 import adbutils as _adbutils
 import uiautomator2 as _u2
-import flet_web as _flet_web
 
 _adb_src = _os.path.join(_os.path.dirname(_adbutils.__file__), 'binaries')
 _u2_assets = _os.path.join(_os.path.dirname(_u2.__file__), 'assets')
-_flet_web_dir = _os.path.join(_os.path.dirname(_flet_web.__file__), 'web')
 
-# 路线 C：把 agent APK / 协议文档 / 压测工具一并打到 dist/agent-bundle/，
-# 让现场运维拿 EXE 包就能 adb 部署、查协议、跑压测。
-# agent APK 在 Windows 上需先用 Android Studio 编译 agent-android/，
-# 产出位置：agent-android/app/build/outputs/apk/{debug|release}/app-*.apk
+# 路线 C：把 agent APK / 协议文档 / 压测工具一并打到 dist/agent-bundle/
 _apk_candidates = [
     _os.path.join('agent-android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
     _os.path.join('agent-android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
@@ -29,7 +24,6 @@ else:
     print('[spec] WARN: agent APK not found (agent-android not built); '
           'agent-bundle/app-*.apk will be missing from dist.')
 
-# 协议规范与压测工具：路径存在才打进去
 for _src, _dst in (
     (_os.path.join('docs', 'agent-protocol.md'), 'agent-bundle'),
     (_os.path.join('agent-android', 'README.md'),  'agent-bundle'),
@@ -38,6 +32,13 @@ for _src, _dst in (
     if _os.path.isfile(_src):
         _agent_datas.append((_src, _dst))
 
+# Next.js 静态前端
+_webui_datas = []
+if _os.path.isdir('webui/out'):
+    _webui_datas.append(('webui/out', 'webui/out'))
+else:
+    print('[spec] WARN: webui/out not found; run "cd webui && npm run build" first.')
+
 a = Analysis(
     ['app.py'],
     pathex=[],
@@ -45,14 +46,13 @@ a = Analysis(
     datas=[
         ('config', 'config'),
         ('data', 'data'),
-        # adb.exe 放在 exe 同级目录，确保一定能被找到
         (_os.path.join(_adb_src, 'adb.exe'), '.'),
         (_os.path.join(_adb_src, 'AdbWinApi.dll'), '.'),
         (_os.path.join(_adb_src, 'AdbWinUsbApi.dll'), '.'),
         (_os.path.join(_u2_assets, 'app-uiautomator.apk'), 'assets'),
         (_os.path.join(_u2_assets, 'u2.jar'), 'assets'),
-        (_flet_web_dir, 'flet_web/web'),
         *_agent_datas,
+        *_webui_datas,
     ],
     hiddenimports=[
         # Web/IO 栈
@@ -70,6 +70,8 @@ a = Analysis(
         'uvicorn.loops.auto',
         'uvicorn.protocols.http.auto',
         'uvicorn.protocols.websockets.auto',
+        'fastapi.staticfiles',
+        'fastapi.responses',
         # 设备 / 图像
         'uiautomator2',
         'adbutils',
@@ -109,20 +111,6 @@ a = Analysis(
         'actions.mutual_friend',
         'actions.scroll_engine',
         'actions.ui_hierarchy',
-        # Flet UI
-        'flet',
-        'flet_web',
-        'flet_core',
-        'flet_runtime',
-        'requests',
-        'ui',
-        'ui.app',
-        'ui.theme',
-        'ui.adb_panel',
-        'ui.config_panel',
-        'ui.device_list',
-        'ui.log_area',
-        'ui.account_check_panel',
     ],
     hookspath=[],
     hooksconfig={},
@@ -131,6 +119,11 @@ a = Analysis(
         'pkg_resources',
         'setuptools',
         'main',
+        'flet',
+        'flet_web',
+        'flet_core',
+        'flet_runtime',
+        'ui',
     ],
     noarchive=False,
 )

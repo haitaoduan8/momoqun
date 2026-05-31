@@ -3,7 +3,7 @@
  * 连接后端 FastAPI 服务器 (http://localhost:5100)
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5100";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 // 通用请求方法
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
