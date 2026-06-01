@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfig } from "@/lib/hooks";
 import { updateConfig } from "@/lib/api";
-import { Settings, Save, Loader2, MessageSquare, Clock } from "lucide-react";
+import { Settings, Save, Loader2, MessageSquare, Clock, Zap } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export function ConfigPanel() {
@@ -19,6 +19,7 @@ export function ConfigPanel() {
     max_consecutive_errors: 5,
     huiguan_message_round: 3,
     huiguan_enabled: false,
+    direct_group_mode: false,
   });
   const [saving, setSaving] = useState(false);
 
@@ -35,6 +36,7 @@ export function ConfigPanel() {
         max_consecutive_errors: config.max_consecutive_errors || 5,
         huiguan_message_round: config.huiguan_message_round || 3,
         huiguan_enabled: config.huiguan_enabled || false,
+        direct_group_mode: config.direct_group_mode ?? false,
       });
     }
   }, [config]);
@@ -90,8 +92,40 @@ export function ConfigPanel() {
         </CardContent>
       </Card>
 
-      {/* 回关邀请设置 */}
+      {/* 直接拉群模式 */}
       <Card className="border-glow">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-accent" />
+            运行模式
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
+            <div>
+              <p className="font-medium text-white">直接拉群模式</p>
+              <p className="text-sm text-muted-foreground">
+                开启后仅通过招呼→邀请进群→拉黑，跳过聊天和关注环节
+              </p>
+            </div>
+            <button
+              onClick={() => setFormData({ ...formData, direct_group_mode: !formData.direct_group_mode })}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                formData.direct_group_mode ? "bg-accent" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  formData.direct_group_mode ? "translate-x-7" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 回关邀请设置 */}
+      <Card className={`border-glow ${formData.direct_group_mode ? "opacity-50 pointer-events-none" : ""}`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-accent" />
@@ -142,7 +176,7 @@ export function ConfigPanel() {
       </Card>
 
       {/* 聊天参数 */}
-      <Card className="border-glow">
+      <Card className={`border-glow ${formData.direct_group_mode ? "opacity-50 pointer-events-none" : ""}`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-accent" />
