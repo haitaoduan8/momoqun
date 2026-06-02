@@ -72,7 +72,7 @@ JSON-RPC 2.0 子集。三种形态：
 | `{"compressed": bool}` | `{"xml": string}` |
 
 - `compressed`：是否使用 AccessibilityNodeInfo 的精简模式（去掉不可见、空文本节点）。
-- `xml`：与 `uiautomator2.Device.dump_hierarchy()` 兼容（同一根 `<hierarchy>` 节点，节点属性同名）。
+- `xml`：标准 `<hierarchy>` 格式（节点属性与 Android AccessibilityNodeInfo 对齐）。
 
 ### 3.3 input
 

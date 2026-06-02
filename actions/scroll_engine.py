@@ -68,6 +68,16 @@ def smooth_scroll_up(
     total_ms = max(min_ms, int(round(actual_dy * coef)))
     step_sleep = max(0.002, (total_ms / 1000.0) / max(1, steps))
 
+    # Agent 驱动没有 touch 属性，直接走 swipe 回退
+    if not hasattr(dev_d, "touch"):
+        try:
+            dev_d.swipe(start_x, start_y, end_x, end_y, max(0.35, total_ms / 1000.0))
+            time.sleep(end_hold_s)
+            return True
+        except Exception:
+            logging.exception("smooth_scroll_up swipe 回退（无 touch）失败")
+            return False
+
     try:
         touch = dev_d.touch
         touch.down(start_x, start_y)

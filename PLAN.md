@@ -18,7 +18,7 @@ momoqun/
 │   ├── settings.yaml       # 所有可配参数
 │   └── elements.yaml       # UI 元素映射 (从 Momo_Project 沿用)
 ├── core/
-│   ├── driver.py           # [复用] DeviceHandler
+│   ├── driver.py           # [shim] DeviceHandler → AgentHandler
 │   ├── pipeline.py         # [新]   单好友流水线状态机
 │   ├── greeter.py          # [改写] 招呼扫描 + 逐个通过
 │   ├── chatter.py          # [新]   一对一多轮聊天

@@ -6,8 +6,6 @@
   → 走 ``DeviceProxy``。
 - 高层动作 + 配置：``driver.random_click / human_type / find_image / ensure_input_ime_ready``
   → 走 ``Driver``。
-
-任何新实现（uiautomator2 / agent-apk / 模拟器自带 API）只要鸭子类型兼容即可。
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from typing import Optional, Protocol, Tuple, runtime_checkable
 
 @runtime_checkable
 class DeviceProxy(Protocol):
-    """底层设备代理（对应 ``uiautomator2.Device`` 的最小子集）。
+    """底层设备代理（dump_hierarchy / click / swipe / press / …）。
 
     所有方法均为同步阻塞，调用方负责异常处理。
     """
@@ -38,7 +36,7 @@ class DeviceProxy(Protocol):
     def screenshot(self) -> "object":  # PIL.Image 或类似可序列化对象
         ...
 
-    def shell(self, cmd, timeout: float = 10):  # → uiautomator2.ShellResponse
+    def shell(self, cmd, timeout: float = 10):
         ...
 
 
@@ -49,7 +47,7 @@ class Driver(Protocol):
     settings: dict
     d: DeviceProxy  # 底层设备代理
 
-    # IME 管理（高层动作；agent 实现可走 IME APK，u2 实现走 ADB Keyboard）
+    # IME 管理（高层动作；agent 实现走 IME APK）
     def ensure_input_ime_ready(self, timeout: float = 8.0) -> bool: ...
 
     def invalidate_input_ime_cache(self) -> None: ...

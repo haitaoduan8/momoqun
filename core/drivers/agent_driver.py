@@ -1,12 +1,11 @@
-"""路线 C 的 APK Agent 驱动 — Week 1 Day 3 stub。
+"""路线 C 的 APK Agent 驱动。
 
 设计：
-- ``AgentHandler``：与 ``u2_driver.DeviceHandler`` 同签名，业务模块无需感知；
+- ``AgentHandler``：实现 ``Driver`` Protocol，业务模块无需感知底层通道；
 - ``AgentDeviceProxy``：实现 ``DeviceProxy`` Protocol，所有 RPC 转发给
-  ``agent_router.AgentRouter`` 上挂着的对应 serial 的 WebSocket 连接；
-- 当前文件只搭骨架，方法体在 Day 4-5 与 agent_router.py 一起补全。
+  ``agent_router.AgentRouter`` 上挂着的对应 serial 的 WebSocket 连接。
 
-通信约定见 ``docs/agent-protocol.md``（Day 5 定稿）。
+通信约定见 ``docs/agent-protocol.md``。
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ import logging
 import os
 import random
 import time
+import xml.etree.ElementTree as ET
 from typing import Any, Optional, Tuple
 
 import cv2
@@ -31,7 +31,7 @@ _DEFAULT_RPC_TIMEOUT = 15.0
 class AgentDeviceProxy:
     """底层设备代理：所有调用 → ``AgentRouter.call_sync(serial, method, params)``。
 
-    方法签名与 ``uiautomator2.Device`` 鸭子兼容，业务代码（``self.driver.d.xxx``）
+    方法签名与 ``DeviceProxy`` Protocol 兼容，业务代码（``self.driver.d.xxx``）
     可以无感切换。
     """
 
@@ -41,6 +41,13 @@ class AgentDeviceProxy:
         # 显式传入；若 None 则下次调用时从 agent_router.get_router() 兜底获取
         self._router = router
         self._rpc_timeout = rpc_timeout
+
+    # ------------------------------------------------------------------
+    # u2 Selector 兼容：d(resourceId=..., text=...) 返回 _UiObjectProxy
+    # ------------------------------------------------------------------
+    def __call__(self, **kwargs: Any) -> "_UiObjectProxy":
+        """d(text=..., resourceId=...) 风格的 selector，返回可链式调用的代理对象。"""
+        return _UiObjectProxy(self, **kwargs)
 
     def _r(self):
         if self._router is None:
@@ -106,8 +113,253 @@ class AgentDeviceProxy:
         raise NotImplementedError("AgentDriver 不支持 adb shell")
 
 
+# ---------------------------------------------------------------------------
+# _UiObjectProxy — d(text=..., resourceId=...) 风格的 selector 代理
+# ---------------------------------------------------------------------------
+
+
+class _Bounds:
+    """bounds 四元组薄封装。"""
+
+    __slots__ = ("left", "top", "right", "bottom")
+
+    def __init__(self, left: int, top: int, right: int, bottom: int) -> None:
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+
+    @property
+    def cx(self) -> int:
+        return (self.left + self.right) // 2
+
+    @property
+    def cy(self) -> int:
+        return (self.top + self.bottom) // 2
+
+
+def _parse_bounds_attr(raw: str) -> Optional[_Bounds]:
+    """从 ``bounds="[l,t][r,b]"`` 字符串提取 _Bounds。"""
+    import re
+
+    m = re.fullmatch(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", raw or "")
+    if not m:
+        return None
+    l, t, r, b = map(int, m.groups())
+    if r <= l or b <= t:
+        return None
+    return _Bounds(l, t, r, b)
+
+
+def _node_matches(node: Any, **kwargs: Any) -> bool:
+    """检查 XML node attrib 是否匹配所有 selector 条件。"""
+    for key, value in kwargs.items():
+        if key == "resourceId":
+            if (node.attrib.get("resource-id") or "") != value:
+                return False
+        elif key == "text":
+            if (node.attrib.get("text") or "").strip() != value:
+                return False
+        elif key == "textContains":
+            if value not in (node.attrib.get("text") or ""):
+                return False
+        elif key == "className":
+            if (node.attrib.get("class") or "") != value:
+                return False
+        elif key == "clickable":
+            if node.attrib.get("clickable") != str(value).lower():
+                return False
+        # 其它 selector 按需扩展
+    return True
+
+
+def _find_all_matching(root: Any, **kwargs: Any) -> list:
+    """返回所有匹配 selector 的 XML node 列表。"""
+    matched = []
+    for node in root.iter():
+        if _node_matches(node, **kwargs):
+            matched.append(node)
+    return matched
+
+
+class _UiObjectProxy:
+    """Selector 代理，内部通过 dump_hierarchy + XML 解析实现。
+
+    支持的链式调用:
+      - ``.exists`` (property)
+      - ``.wait(timeout=5)``
+      - ``.click()``
+      - ``.fling.toBeginning(max_swipes=10)``
+      - ``.scroll.vert.forward(steps)``
+      - ``.get_text()``
+      - ``.info`` (property, 返回 dict)
+    """
+
+    def __init__(self, proxy: AgentDeviceProxy, **kwargs: Any) -> None:
+        self._proxy = proxy
+        self._selectors = kwargs
+        self._fling = _FlingProxy(self)
+        self._scroll = _ScrollProxy(self)
+
+    # ---- internal helpers ----
+
+    def _dump_and_find(self) -> Tuple[Optional[Any], Optional[_Bounds]]:
+        """dump hierarchy，返回第一个匹配节点及其 bounds。"""
+        try:
+            xml = self._proxy.dump_hierarchy()
+            root = ET.fromstring(xml)
+            for node in root.iter():
+                if _node_matches(node, **self._selectors):
+                    b = _parse_bounds_attr(node.attrib.get("bounds", ""))
+                    return node, b
+        except Exception:
+            logging.debug("_UiObjectProxy._dump_and_find 异常", exc_info=True)
+        return None, None
+
+    def _dump_and_find_all(self) -> list:
+        """dump hierarchy，返回所有匹配节点的 (node, bounds) 列表。"""
+        try:
+            xml = self._proxy.dump_hierarchy()
+            root = ET.fromstring(xml)
+            results = []
+            for node in root.iter():
+                if _node_matches(node, **self._selectors):
+                    b = _parse_bounds_attr(node.attrib.get("bounds", ""))
+                    results.append((node, b))
+            return results
+        except Exception:
+            logging.debug("_UiObjectProxy._dump_and_find_all 异常", exc_info=True)
+        return []
+
+    # ---- public API ----
+
+    @property
+    def exists(self) -> bool:
+        node, _ = self._dump_and_find()
+        return node is not None
+
+    def wait(self, timeout: float = 5.0) -> bool:
+        deadline = time.time() + max(0.5, float(timeout))
+        while time.time() < deadline:
+            node, _ = self._dump_and_find()
+            if node is not None:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def click(self) -> bool:
+        _, b = self._dump_and_find()
+        if b is None:
+            return False
+        self._proxy.click(b.cx, b.cy)
+        return True
+
+    def get_text(self) -> str:
+        node, _ = self._dump_and_find()
+        if node is None:
+            return ""
+        return (node.attrib.get("text") or "").strip()
+
+    @property
+    def info(self) -> dict:
+        node, b = self._dump_and_find()
+        if node is None:
+            return {}
+        result = dict(node.attrib)
+        if b:
+            result["bounds"] = {
+                "left": b.left, "top": b.top,
+                "right": b.right, "bottom": b.bottom,
+            }
+        return result
+
+    @property
+    def fling(self) -> "_FlingProxy":
+        return self._fling
+
+    @property
+    def scroll(self) -> "_ScrollProxy":
+        return self._scroll
+
+
+class _FlingProxy:
+    """模拟 u2 UiObject.fling。"""
+
+    def __init__(self, ui_obj: _UiObjectProxy) -> None:
+        self._ui = ui_obj
+
+    def _bounds(self) -> Optional[_Bounds]:
+        _, b = self._ui._dump_and_find()
+        return b
+
+    def toBeginning(self, max_swipes: int = 10) -> None:
+        b = self._bounds()
+        if b is None:
+            return
+        cx = b.cx
+        y_bottom = b.bottom - 40
+        y_top = b.top + 40
+        for _ in range(max(1, max_swipes)):
+            try:
+                self._ui._proxy.swipe(cx, y_bottom, cx, y_top, 0.3)
+            except Exception:
+                break
+            time.sleep(0.25)
+
+    def toEnd(self, max_swipes: int = 10) -> None:
+        b = self._bounds()
+        if b is None:
+            return
+        cx = b.cx
+        y_top = b.top + 40
+        y_bottom = b.bottom - 40
+        for _ in range(max(1, max_swipes)):
+            try:
+                self._ui._proxy.swipe(cx, y_top, cx, y_bottom, 0.3)
+            except Exception:
+                break
+            time.sleep(0.25)
+
+
+class _ScrollProxy:
+    """模拟 u2 UiObject.scroll。"""
+
+    def __init__(self, ui_obj: _UiObjectProxy) -> None:
+        self.vert = _VertScrollProxy(ui_obj)
+
+
+class _VertScrollProxy:
+    """模拟 u2 UiObject.scroll.vert。"""
+
+    def __init__(self, ui_obj: _UiObjectProxy) -> None:
+        self._ui = ui_obj
+
+    def forward(self, steps: int = 50) -> None:
+        _, b = self._ui._dump_and_find()
+        if b is None:
+            return
+        cx = b.cx
+        y_from = b.bottom - 40
+        y_to = b.top + 40
+        try:
+            self._ui._proxy.swipe(cx, y_from, cx, y_to, 0.3)
+        except Exception:
+            logging.debug("_VertScrollProxy.forward swipe 异常", exc_info=True)
+
+    def backward(self, steps: int = 50) -> None:
+        _, b = self._ui._dump_and_find()
+        if b is None:
+            return
+        cx = b.cx
+        y_from = b.top + 40
+        y_to = b.bottom - 40
+        try:
+            self._ui._proxy.swipe(cx, y_from, cx, y_to, 0.3)
+        except Exception:
+            logging.debug("_VertScrollProxy.backward swipe 异常", exc_info=True)
+
 class AgentHandler:
-    """与 ``u2_driver.DeviceHandler`` 同签名的高层驱动。"""
+    """路线 C 高层驱动，实现 ``Driver`` Protocol。"""
 
     def __init__(
         self,
@@ -183,11 +435,43 @@ class AgentHandler:
         self._click_point_with_offset(x, y, skip_delay=skip_delay)
 
     def random_click(self, selector: str, skip_delay: bool = False) -> bool:
-        # agent 模式没有 u2 Selector；业务应改用 random_click_xy（坐标已由 hierarchy 解析得到）。
-        raise NotImplementedError("AgentDriver 不支持 selector 风格点击，请用 random_click_xy")
+        """通过 resourceId 或 text 在 hierarchy 中查找元素并点击其中心。"""
+        try:
+            xml = self.d.dump_hierarchy()
+            root = ET.fromstring(xml)
+            for node in root.iter():
+                rid = node.attrib.get("resource-id") or ""
+                txt = (node.attrib.get("text") or "").strip()
+                if rid == selector or txt == selector:
+                    b = _parse_bounds_attr(node.attrib.get("bounds", ""))
+                    if b:
+                        self._click_point_with_offset(b.cx, b.cy, skip_delay=skip_delay)
+                        return True
+            return False
+        except Exception:
+            logging.exception("AgentHandler.random_click 异常 selector=%s", selector)
+            return False
 
     def click_uielement(self, el, skip_delay: bool = False) -> bool:
-        raise NotImplementedError("AgentDriver 不支持 UiObject，请用 random_click_xy")
+        """点击 _UiObjectProxy 或任何带 bounds 信息的对象。"""
+        try:
+            if isinstance(el, _UiObjectProxy):
+                _, b = el._dump_and_find()
+                if b:
+                    self._click_point_with_offset(b.cx, b.cy, skip_delay=skip_delay)
+                    return True
+                return False
+            # 兼容：el 是一个 dict 形式的 bounds
+            if isinstance(el, dict):
+                cx = (el.get("left", 0) + el.get("right", 0)) // 2
+                cy = (el.get("top", 0) + el.get("bottom", 0)) // 2
+                self._click_point_with_offset(cx, cy, skip_delay=skip_delay)
+                return True
+            logging.warning("click_uielement: 不支持的 el 类型 %s", type(el))
+            return False
+        except Exception:
+            logging.exception("AgentHandler.click_uielement 异常")
+            return False
 
     def is_keyboard_shown(self, input_box_rid: Optional[str] = None) -> bool:
         try:
@@ -209,7 +493,7 @@ class AgentHandler:
         )
 
     def wait_ui_stable(self, max_wait: float = 1.2, poll: float = 0.12) -> bool:
-        # 与 u2_driver 一致：连续两次 dump_hierarchy 的 hash 一致即视为稳定。
+        # 连续两次 dump_hierarchy 的 hash 一致即视为稳定。
         import hashlib
 
         deadline = time.time() + max_wait

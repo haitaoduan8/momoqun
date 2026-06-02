@@ -210,7 +210,7 @@ class DeviceThread:
 
         驱动选择策略 (路线 C — 仅 Agent)：
           若 ``AgentRouter`` 上有该 serial 的活跃连接 → 用 ``AgentHandler``；
-          否则报错（不再回退 uiautomator2）。
+          否则报错。
         """
         logger = logging.getLogger(f"device.{self.serial}")
         logger.info("设备线程启动: %s", self.name)

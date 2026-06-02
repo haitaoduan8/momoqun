@@ -107,47 +107,27 @@ adb devices
 
 如果某台模拟器是 offline / unauthorized：先在模拟器界面里授权或重启 adbd。
 
-### 5.2 批量部署（一条命令搞定）
+### 5.2 安装 APK + 配置连接
 
-> 在 **master 机器**或任何能 `adb` 触达模拟器的机器上跑：
-
-```powershell
-# Windows
-.\scripts\deploy_agent.ps1 `
-    -ApkPath ".\agent-bundle\app-release.apk" `
-    -MasterUrl "ws://192.168.1.50:5100"
-```
+用 adb 安装 APK 并推送配置：
 
 ```bash
-# macOS / Linux
-./scripts/deploy_agent.sh -m ws://192.168.1.50:5100 -a ./agent-bundle/app-release.apk
+# 安装 APK
+adb install -r -g agent-bundle/app-release.apk
+
+# 推送 master 地址 + serial 并自动启动
+adb shell am broadcast -a com.momoqun.agent.SET_CONFIG \
+    --es master_url "ws://192.168.1.50:5100" \
+    --es serial "127.0.0.1_5555" \
+    --ez autostart true \
+    -n com.momoqun.agent/.service.ConfigReceiver
 ```
 
-脚本会自动：
+ConfigReceiver 写完配置后自启 ForegroundService 并连 master。
 
-1. 遍历所有 `adb devices` 中状态为 `device` 的 serial；
-2. `adb install -r -g` 装 APK；
-3. `adb shell am broadcast -a com.momoqun.agent.SET_CONFIG ...`
-   推 master 地址 + serial（serial 自动把 `:` 换成 `_`）；
-4. ConfigReceiver 写完配置后自启 ForegroundService 并连 master。
-
-### 5.3 开启 Accessibility + IME（关键）
+### 5.3 开启 Accessibility + IME
 
 每台 Agent 必须有：① 启用 `MomoQun Agent` 无障碍 ② 默认输入法 = `MomoQun IME`。
-
-#### 5.3.1 Root 模拟器（雷电 / mumu / 夜神 / BlueStacks）
-
-```powershell
-# Windows
-.\scripts\setup_permissions.ps1
-```
-
-```bash
-# macOS / Linux
-./scripts/setup_permissions.sh
-```
-
-#### 5.3.2 非 root 真机
 
 在每台设备里手动：
 
@@ -175,10 +155,10 @@ curl http://localhost:5100/api/agents
 
 打开 master UI（`http://localhost:5100`），在「设备列表」里点 **全部启动**。
 
-DeviceThread 会**自动**走 agent-first 策略：
+DeviceThread 会自动检测 `agent_router.get(serial)` 是否命中：
 
-- 检测到 `agent_router.get(serial)` 命中 → 走 `AgentHandler`（路线 C 高速通路）；
-- 否则回退 `uiautomator2.connect(serial)`（ADB 通路，兼容老部署）。
+- 命中 → 走 `AgentHandler`（路线 C 高速通路）；
+- 未命中 → 报错，需先在模拟器中启动 Agent APK。
 
 ## 7. 现场压测（可选）
 
@@ -206,8 +186,8 @@ python stress_agent_router.py --agents 50 --workers 50 --duration 30
 |------|------|
 | `curl /api/agents` 返回空 | ① 防火墙是否放行 5100；② Agent 通知里 status 是 `connecting` / `failure`？③ APK 内 master_url 是否写错； ④ `adb shell logcat -s MQAgent.WS:*` 看 WS error |
 | 业务说 `agent for serial ... not connected` | serial 不匹配：master 拿 ADB serial（`127.0.0.1:5555`），但 Agent 注册用 `127.0.0.1_5555`。router 已自动 normalize（`:` ↔ `_`），如仍报错请用 `/api/agents` 比对实际 serial 拼写 |
-| `dump_hierarchy` 返回空 | Accessibility 未启用 / 被系统回收，运行 `setup_permissions` 重新启用 |
-| `type_text` 返 `-32003 momoqun-ime not selected` | 默认 IME 不是 momoqun-ime，运行 `setup_permissions` 重新设置 |
+| `dump_hierarchy` 失败 | ① 若 A11y 未启用，回退到 `uiautomator dump`，可能与模拟器上残留的 uiautomator 进程冲突（`adb shell pkill -f uiautomator`）；② 若 A11y 已启用但返回空，可能是系统回收了服务，重启 Agent APK |
+| `type_text` 返 `-32003 momoqun-ime not selected` | 默认 IME 不是 momoqun-ime，在 Agent APK 里点「启用输入法」并切换为默认 |
 | 业务跑得慢 | 看 `/api/agents` 的 `idle_for_s`：> 30s 表示 Agent 心跳异常；`pending_rpc` 长期 > 5 表示业务侧调用速率超过 Agent 处理能力 |
 | Agent 频繁掉线 | 通常是模拟器 ROM 杀后台；MainActivity 里的「启动 Agent」可改为开机自启（已实现 `BootReceiver`） |
 

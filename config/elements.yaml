@@ -8,7 +8,7 @@ entry_elements:
   sayhi_card_name:
     resourceId: "com.immomo.momo:id/tv_name"
 
-# 聊天列表。以下为 OnePlus+当前渠道包在「消息」Tab 下 uiautomator dump 对齐的 id
+# 聊天列表。以下为 OnePlus+当前渠道包在「消息」Tab 下 dump_hierarchy 对齐的 id
 #（历史占位符 chat_list_item 在现版已改为 chatlist_item_* 命名，无独立 uid 子节点。）
 # 调度器只关心 chat_row/chat_row_name/chat_row_uid/chat_unread_badge 四个键的 resourceId。
 chat_list:

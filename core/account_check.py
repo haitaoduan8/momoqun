@@ -12,8 +12,7 @@
   text       = ``"账号存在异常，点击查看详情"``
 - banner 文案"账号存在异常"作为 6 字独特中文短语，
   直接对 ``dump_hierarchy()`` 字符串做 ``in`` 检测即足以精准命中。
-- 该方案在 u2_driver / agent_driver 两种通路上行为一致，
-  共同依赖项只有 ``driver.d.dump_hierarchy()`` 与 ``driver.d.click()``。
+- 共同依赖项只有 ``driver.d.dump_hierarchy()`` 与 ``driver.d.click()``。
 
 流程
 ====
@@ -81,8 +80,7 @@ def _click_more_tab(driver: Any, cfg: dict, logger: logging.Logger) -> bool:
     rid = (cfg.get("more_tab") or {}).get("resourceId") or ""
     try:
         d = driver.d
-        # u2 风格 selector 路径（u2_driver 走得通；agent_driver.d 是 proxy
-        # 没有 __call__，下面会兜底到坐标点）
+        # selector 路径（d(resourceId=...) 若可用则直接点，否则兜底到坐标点）
         if rid and hasattr(d, "__call__"):
             try:
                 el = d(resourceId=rid)

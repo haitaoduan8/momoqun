@@ -1,7 +1,7 @@
 # momoqun-agent (Android)
 
 路线 C 的 **设备侧 APK**。每个模拟器跑一份，与 Windows 上的 Python Master 走
-反向 WebSocket（emulator → master），bypass ADB / uiautomator2 / atx-agent。
+反向 WebSocket（emulator → master），无需 ADB 运行时通道。
 
 > 协议：见仓库根目录 [`docs/agent-protocol.md`](../docs/agent-protocol.md)（v1.0）。
 
@@ -50,7 +50,7 @@ agent-android/
             │   ├── ImeStatusHandler.kt
             │   └── KeyboardVisibleHandler.kt
             └── util/
-                └── HierarchyXml.kt               # AccessibilityNodeInfo → uiautomator2 兼容 XML
+                └── HierarchyXml.kt               # AccessibilityNodeInfo → 标准 XML
 ```
 
 ## 2. 构建（在 Windows / macOS 上都行）
@@ -101,8 +101,8 @@ Master 业务侧（`core/drivers/agent_driver.AgentHandler`）会通过这个连
 ## 5. 性能预算
 
 - WS 帧 ≤ 200 KB（dump_hierarchy 在中等 UI 复杂度下约 80–150 KB），master 端 200 设备并发处理 ≈ 30 MB/s。
-- `dump_hierarchy` 不再走 atx-agent，单次耗时 30–80 ms（比 u2 的 200–400 ms 快 5–10×）。
-- 心跳 10s 一次，相比 atx-agent 的 ping 风暴减少 99% 流量。
+- `dump_hierarchy` 通过 AccessibilityService，单次耗时 30–80 ms。
+- 心跳 10s 一次，流量极低。
 
 ## 6. FAQ
 
@@ -111,18 +111,10 @@ A: 主流模拟器都是 Android 9~13。`takeScreenshot()` 要 API 30+，没有�
 `screenshot` RPC 返回 `-32603`，业务侧会自动降级到截屏 fallback（如 ADB
 `screencap`）。
 
-**Q: AccessibilityNodeInfo 不带元素的 `index` / `selected` / `password`，导致 uiautomator2 XPath 失效怎么办？**
-A: `util/HierarchyXml.kt` 已对齐 uiautomator2 的字段集；如果业务 XPath 用到
-我们未输出的字段，提 issue 后追加即可（v1 协议允许在 `result` 里追加字段，
-不算 break）。
+**Q: AccessibilityNodeInfo 不带元素的 `index` / `selected` / `password`，导致 XPath 失效怎么办？**
+A: `util/HierarchyXml.kt` 已补齐这些字段；如果业务 XPath 用到我们未输出的字段，
+提 issue 后追加即可（v1 协议允许在 `result` 里追加字段，不算 break）。
 
 **Q: 通知能不能去掉？**
 A: 前台 Service 必须有通知；可以把 channel importance 设为 `IMPORTANCE_MIN`
 进一步降权，或在用户隐私设置里隐藏。
-
-## 7. 后续
-
-- Week 3 集成阶段：在 `device_manager.py` 里加一个 "agent-first" 选择策略：
-  优先检查 `agent_router.list_connected()`，命中走 `AgentHandler`，未命中
-  回退到 `uiautomator2 DeviceHandler`，业务模块全程不感知。
-- 压测目标：单台 Windows + 32C/64T + 96GB → 50 emulator 长时间稳定（业务循环 < 5% 失败率）。

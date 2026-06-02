@@ -111,11 +111,12 @@
 
 ## 文件结构
 
+> 注：以下 Flet UI 已被 Next.js webui 替代，`ui/` 目录已移除。
+
 ```
-ui/
+ui/  (已删除，由 webui/ 替代)
 ├── theme.py           # 主题系统（Neon Aurora）
 ├── app.py             # 主窗口布局
-├── adb_panel.py       # ADB 设备管理
 ├── config_panel.py    # 运行配置
 ├── device_list.py     # 设备卡片列表
 ├── account_check_panel.py  # 账号检测

@@ -57,8 +57,8 @@ agent 在 Android 进程内用 AccessibilityService 直接执行，无需 ADB。
 | Day | Milestone | 验收 |
 |-----|-----------|------|
 | 1 | per-device storage 拆分 + 安全退出归档清零 | 单设备跑通；多设备启动各自写自己的 json |
-| 2 | `core/drivers/base.py` Driver Protocol；现 `core/driver.py` 迁到 `core/drivers/u2_driver.py` | import 不报错，业务模块全部依赖 `Driver` 而非 `u2.Device` |
-| 3 | `core/drivers/agent_driver.py` stub（接口齐全） | 接口签名与 `u2_driver` 一致 |
+| 2 | `core/drivers/base.py` Driver Protocol | import 不报错，业务模块全部依赖 `Driver` |
+| 3 | `core/drivers/agent_driver.py` stub（接口齐全） | 接口签名与 `Driver` Protocol 一致 |
 | 4 | `agent_router.py` WebSocket 反向 RPC 骨架（无业务） | 假 agent 连接，能 ping/pong |
 | 5 | `docs/agent-protocol.md` 定稿 + 错误码冻结 | 协议字段、版本号、心跳约定全部写死 |
 
@@ -97,7 +97,6 @@ agent 在 Android 进程内用 AccessibilityService 直接执行，无需 ADB。
 ### 4.2 待实施
 
 - `core/drivers/base.py`（新）
-- `core/drivers/u2_driver.py`（迁移）
 - `core/drivers/agent_driver.py`（新）
 - `agent_router.py`（新）
 - `agent-android/`（新工程）
