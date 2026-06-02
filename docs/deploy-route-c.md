@@ -186,7 +186,7 @@ python stress_agent_router.py --agents 50 --workers 50 --duration 30
 |------|------|
 | `curl /api/agents` 返回空 | ① 防火墙是否放行 5100；② Agent 通知里 status 是 `connecting` / `failure`？③ APK 内 master_url 是否写错； ④ `adb shell logcat -s MQAgent.WS:*` 看 WS error |
 | 业务说 `agent for serial ... not connected` | serial 不匹配：master 拿 ADB serial（`127.0.0.1:5555`），但 Agent 注册用 `127.0.0.1_5555`。router 已自动 normalize（`:` ↔ `_`），如仍报错请用 `/api/agents` 比对实际 serial 拼写 |
-| `dump_hierarchy` 失败 | ① 若 A11y 未启用，回退到 `uiautomator dump`，可能与模拟器上残留的 uiautomator 进程冲突（`adb shell pkill -f uiautomator`）；② 若 A11y 已启用但返回空，可能是系统回收了服务，重启 Agent APK |
+| `dump_hierarchy` 失败 | 取树优先级：① A11y（若启用，最快，约 30–80ms）；② 内置迭代 dumper：master 经 `pm path com.momoqun.agent` 取 APK 路径，再 `CLASSPATH=<base.apk> app_process /system/bin com.momoqun.agent.dumper.Main`（shell 身份，迭代遍历，深层树不崩）；③ 兜底 `uiautomator dump --compressed`。排查：跑前都会 `pkill -f uiautomator` 清残留；若 ② 始终失败看 `logcat -s MQAgent.Dump:*`（常见：隐藏 API 受限—已用 `setHiddenApiExemptions` 兜底；或个别 ROM `base.apk` 不可读，会自动落到 ③）；若 A11y 已启用但返回空，多为系统回收服务，重启 Agent APK |
 | `type_text` 返 `-32003 momoqun-ime not selected` | 默认 IME 不是 momoqun-ime，在 Agent APK 里点「启用输入法」并切换为默认 |
 | 业务跑得慢 | 看 `/api/agents` 的 `idle_for_s`：> 30s 表示 Agent 心跳异常；`pending_rpc` 长期 > 5 表示业务侧调用速率超过 Agent 处理能力 |
 | Agent 频繁掉线 | 通常是模拟器 ROM 杀后台；MainActivity 里的「启动 Agent」可改为开机自启（已实现 `BootReceiver`） |
