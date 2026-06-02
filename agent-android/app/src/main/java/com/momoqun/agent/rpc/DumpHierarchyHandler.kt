@@ -70,9 +70,10 @@ object DumpHierarchyHandler {
             return null
         }
         return try {
-            // 先清理可能残留的 uiautomator 进程，避免 UiAutomation 连接被占用。
-            val cmd = "pkill -f uiautomator 2>/dev/null; " +
-                "CLASSPATH=$apk exec app_process /system/bin $DUMPER_MAIN"
+            // 先清理可能残留的 uiautomator dump 进程，避免 UiAutomation 连接被占用。
+            // 注意：不能用 pkill -f uiautomator，会误杀 app_process 自身。
+            val cmd = "pkill -f 'com.android.commands.uiautomator.Launcher' 2>/dev/null; " +
+                "CLASSPATH=$apk app_process /system/bin $DUMPER_MAIN"
             val resp = runBlocking { client.shellExec(cmd, timeoutMs = 20_000L) }
             val code = resp.optInt("code", -1)
             val output = resp.optString("output", "")
