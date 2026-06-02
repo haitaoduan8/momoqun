@@ -90,10 +90,27 @@ app.add_middleware(
 #   - WS: ws://<host>:<port>/agent/{serial}    供 momoqun-agent.apk 连接
 #   - HTTP GET /api/agents                     在线 agent 列表
 try:
-    from agent_router import mount_agent_routes
+    from agent_router import mount_agent_routes, get_router
     mount_agent_routes(app)
 except Exception:
     logger.exception("挂载 agent_router 失败（agent 模式不可用）")
+
+
+@app.post("/api/test-rpc")
+async def test_rpc(body: dict):
+    serial = body.get("serial", "")
+    method = body.get("method", "ping")
+    params = body.get("params", {})
+    timeout = body.get("timeout", 20.0)
+    try:
+        router = get_router()
+        conn = router.get(serial)
+        if conn is None:
+            return {"ok": False, "error": f"agent {serial} not found"}
+        result = await conn.call(method, params, timeout=timeout)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "type": type(e).__name__}
 
 
 # 全局异常处理器：确保所有错误都返回 JSON（而不是 HTML 500 页面）

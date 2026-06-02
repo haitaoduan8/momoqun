@@ -196,7 +196,7 @@ class WsClient(
                         RpcError(err.optInt("code", -32603), err.optString("message", "shell_exec failed"))
                     )
                 } else {
-                    cont.resume(obj)
+                    cont.resume(obj.optJSONObject("result") ?: obj)
                 }
                 return
             }
