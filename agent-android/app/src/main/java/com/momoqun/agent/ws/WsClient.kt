@@ -15,14 +15,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeout
 
 /**
  * WebSocket 客户端，单实例对应一条 `agent → master` 长连接。
@@ -47,9 +41,6 @@ class WsClient(
 
     @Volatile private var socket: WebSocket? = null
     @Volatile private var hbJob: Job? = null
-
-    /** agent → master 的 shell_exec 待响应：id → Continuation */
-    private val pendingShell = ConcurrentHashMap<String, kotlin.coroutines.Continuation<JSONObject>>()
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -101,7 +92,6 @@ class WsClient(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 INSTANCE = null
-                cancelPendingShell("ws failure: ${t.message}")
                 Log.w(TAG, "ws failure: ${t.message}")
                 onStatus("failure: ${t.message}")
                 if (!opened.isCompleted) opened.complete(false)
@@ -114,7 +104,6 @@ class WsClient(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 INSTANCE = null
-                cancelPendingShell("ws closed: $code")
                 onStatus("closed: $code $reason")
                 if (!closed.isCompleted) closed.complete(true)
             }
@@ -143,66 +132,15 @@ class WsClient(
         }
     }
 
-    /**
-     * Agent → Master：请求 master 执行 shell 命令（反向 RPC）。
-     *
-     * 用于需要 shell 用户权限的操作（如 `uiautomator dump`），
-     * APK 进程内执行会与 UiAutomation 连接冲突，master 通过 adb 执行则无此问题。
-     */
-    suspend fun shellExec(cmd: String, timeoutMs: Long = 15_000L): JSONObject {
-        val ws = socket ?: throw IllegalStateException("WebSocket not connected")
-        val id = UUID.randomUUID().toString()
-        val msg = JSONObject().apply {
-            put("id", id)
-            put("method", "shell_exec")
-            put("params", JSONObject().put("cmd", cmd))
-        }
-        return withTimeout(timeoutMs) {
-            suspendCancellableCoroutine<JSONObject> { cont ->
-                pendingShell[id] = cont
-                cont.invokeOnCancellation { pendingShell.remove(id) }
-                try {
-                    ws.send(msg.toString())
-                } catch (t: Throwable) {
-                    pendingShell.remove(id)
-                    cont.resumeWithException(t)
-                }
-            }
-        }
-    }
-
-    private fun cancelPendingShell(reason: String) {
-        val entries = pendingShell.entries.toList()
-        pendingShell.clear()
-        for ((_, cont) in entries) {
-            cont.resumeWithException(IllegalStateException(reason))
-        }
-    }
-
     private suspend fun handleIncoming(ws: WebSocket, text: String) {
         val obj = try { JSONObject(text) } catch (t: Throwable) {
             sendError(ws, null, -32600, "invalid json: ${t.message}")
             return
         }
 
-        // 1) agent→master shell_exec 的响应（有 id + result/error，无 method）
         val id = obj.optString("id", null)
-        if (id != null && (obj.has("result") || obj.has("error"))) {
-            val cont = pendingShell.remove(id)
-            if (cont != null) {
-                if (obj.has("error")) {
-                    val err = obj.getJSONObject("error")
-                    cont.resumeWithException(
-                        RpcError(err.optInt("code", -32603), err.optString("message", "shell_exec failed"))
-                    )
-                } else {
-                    cont.resume(obj.optJSONObject("result") ?: obj)
-                }
-                return
-            }
-        }
 
-        // 2) master→agent 的 RPC 请求（有 id + method）
+        // master→agent 的 RPC 请求（有 id + method）
         if (id == null || !obj.has("method")) {
             sendError(ws, id, -32600, "missing id/method")
             return
@@ -241,7 +179,7 @@ class WsClient(
     companion object {
         private const val TAG = "MQAgent.WS"
 
-        /** 当前活跃的 WsClient 实例，供 RPC handler 做反向调用（如 shell_exec）。 */
+        /** 当前活跃的 WsClient 实例。 */
         @Volatile
         var INSTANCE: WsClient? = null
             internal set
