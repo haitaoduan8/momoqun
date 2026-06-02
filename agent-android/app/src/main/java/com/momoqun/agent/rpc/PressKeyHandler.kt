@@ -1,6 +1,5 @@
 package com.momoqun.agent.rpc
 
-import com.momoqun.agent.util.ShellHelper
 import com.momoqun.agent.ws.RpcError
 import org.json.JSONObject
 
@@ -15,7 +14,7 @@ object PressKeyHandler {
             "enter"  -> "66"
             else -> throw RpcError(-32602, "unknown key '$key'")
         }
-        val ok = ShellHelper.execOk("input keyevent $keycode")
+        val ok = ShellViaMaster.ok("input keyevent $keycode")
         if (!ok) throw RpcError(-32603, "key '$key' dispatch failed")
         return JSONObject().put("ok", true)
     }

@@ -2,7 +2,6 @@ package com.momoqun.agent.rpc
 
 import android.util.Log
 import com.momoqun.agent.service.MomoQunIME
-import com.momoqun.agent.util.ShellHelper
 import com.momoqun.agent.ws.RpcError
 import org.json.JSONObject
 
@@ -24,9 +23,9 @@ object TypeTextHandler {
             Log.w(TAG, "commitText failed, falling back to input text")
         }
 
-        // 回退：shell input text（仅支持 ASCII）
+        // 回退：root shell input text（仅支持 ASCII）
         val escaped = text.replace("'", "'\\''")
-        val ok = ShellHelper.execOk("input text '$escaped'")
+        val ok = ShellViaMaster.ok("input text '$escaped'")
         if (!ok) throw RpcError(-32603, "text input failed")
         return JSONObject().put("ok", true)
     }

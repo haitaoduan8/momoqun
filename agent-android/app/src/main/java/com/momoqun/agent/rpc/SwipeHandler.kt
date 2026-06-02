@@ -1,6 +1,5 @@
 package com.momoqun.agent.rpc
 
-import com.momoqun.agent.util.ShellHelper
 import com.momoqun.agent.ws.RpcError
 import org.json.JSONObject
 
@@ -15,7 +14,7 @@ object SwipeHandler {
         val y1 = params.getInt("y1")
         val x2 = params.getInt("x2")
         val y2 = params.getInt("y2")
-        val ok = ShellHelper.execOk("input swipe $x1 $y1 $x2 $y2 $duration")
+        val ok = ShellViaMaster.ok("input swipe $x1 $y1 $x2 $y2 $duration")
         if (!ok) throw RpcError(-32603, "swipe failed")
         return JSONObject().put("ok", true)
     }
