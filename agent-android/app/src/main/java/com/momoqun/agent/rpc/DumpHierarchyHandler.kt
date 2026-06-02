@@ -3,8 +3,9 @@ package com.momoqun.agent.rpc
 import android.util.Log
 import com.momoqun.agent.service.A11yService
 import com.momoqun.agent.util.HierarchyXml
-import com.momoqun.agent.util.ShellHelper
 import com.momoqun.agent.ws.RpcError
+import com.momoqun.agent.ws.WsClient
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
 object DumpHierarchyHandler {
@@ -12,44 +13,19 @@ object DumpHierarchyHandler {
     private const val TMP_PATH = "/data/local/tmp/_mq_hierarchy.xml"
 
     fun handle(params: JSONObject): JSONObject {
-        // ---- 优先：A11yService（零开销，不触发额外 UiAutomation 连接）----
+        // 优先：A11yService（零开销，直接读 AccessibilityNodeInfo 树）
         val a11yXml = tryA11yDump()
         if (a11yXml != null) return JSONObject().put("xml", a11yXml)
 
-        // ---- 回退：uiautomator dump shell 命令（带重试）----
-        // 清理残留文件
-        ShellHelper.exec("rm -f $TMP_PATH 2>/dev/null")
-
-        val maxRetries = 3
-        for (attempt in 1..maxRetries) {
-            // 杀掉残留的 uiautomator 进程避免端口冲突
-            if (attempt > 1) {
-                ShellHelper.exec("pkill -f 'uiautomator' 2>/dev/null")
-                Thread.sleep(300L * attempt)
-            }
-
-            val dumpOk = ShellHelper.execOk("uiautomator dump $TMP_PATH")
-            if (dumpOk) {
-                val result = ShellHelper.exec("cat $TMP_PATH && rm -f $TMP_PATH")
-                if (result.code == 0 && result.output.isNotEmpty()) {
-                    Log.d(TAG, "uiautomator dump OK (attempt=$attempt)")
-                    return JSONObject().put("xml", result.output)
-                }
-            }
-
-            Log.w(TAG, "uiautomator dump failed attempt=$attempt/$maxRetries")
-            if (attempt < maxRetries) {
-                Thread.sleep(500L * attempt)
-            }
-        }
-
-        throw RpcError(-32603, "hierarchy dump failed (A11y=off, uiautomator exhausted)")
+        // 回退：请求 master 通过 adb shell 执行 uiautomator dump
+        // APK 进程内执行 uiautomator dump 会与 UiAutomation 连接冲突，
+        // master 通过 adb 执行在 shell 用户上下文，无此问题。
+        val xml = masterShellDump()
+            ?: throw RpcError(-32603,
+                "hierarchy dump failed: A11y off and master shell_exec failed.")
+        return JSONObject().put("xml", xml)
     }
 
-    /**
-     * 如果 A11yService 已连接（用户自行开启），直接用 AccessibilityNodeInfo
-     * 序列化 XML，零 shell 开销、不触发额外 UiAutomation 连接。
-     */
     private fun tryA11yDump(): String? {
         val service = A11yService.INSTANCE ?: return null
         return try {
@@ -61,6 +37,34 @@ object DumpHierarchyHandler {
             xml
         } catch (e: Exception) {
             Log.w(TAG, "A11y dump failed", e)
+            null
+        }
+    }
+
+    /**
+     * 通过 master 的 adb 通道执行 `uiautomator dump`，读回 XML。
+     * 运行在 shell 用户上下文，避开 APK 进程的 UiAutomation 冲突。
+     */
+    private fun masterShellDump(): String? {
+        val client = WsClient.INSTANCE ?: run {
+            Log.w(TAG, "WsClient not available for shell_exec")
+            return null
+        }
+        return try {
+            val cmd = "rm -f $TMP_PATH && uiautomator dump $TMP_PATH && cat $TMP_PATH && rm -f $TMP_PATH"
+            // runBlocking: RPC handler 本身是 suspend fun，但 DumpHierarchyHandler.handle 不是
+            val resp = runBlocking { client.shellExec(cmd, timeoutMs = 20_000L) }
+            val code = resp.optInt("code", -1)
+            val output = resp.optString("output", "")
+            if (code == 0 && output.contains("<hierarchy")) {
+                Log.d(TAG, "master shell dump OK (${output.length} chars)")
+                output
+            } else {
+                Log.w(TAG, "master shell dump failed: code=$code output=${output.take(200)}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "master shell_exec failed", e)
             null
         }
     }

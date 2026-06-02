@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import subprocess
 import time
 import uuid
 from typing import Any, Dict, Optional
@@ -125,7 +126,7 @@ class AgentConnection:
     def handle_incoming(self, msg: dict) -> None:
         """agent → master 的单帧分发。"""
         self.last_seen_at = time.time()
-        # 1) RPC 响应
+        # 1) RPC 响应（agent 回复 master 发出的请求）
         if "id" in msg and ("result" in msg or "error" in msg):
             rpc_id = msg.get("id")
             fut = self._pending.pop(rpc_id, None)
@@ -148,12 +149,76 @@ class AgentConnection:
             else:
                 fut.set_result(msg.get("result"))
             return
-        # 2) agent 主动事件
+        # 2) agent → master 反向 RPC 请求（如 shell_exec）
+        if "id" in msg and "method" in msg:
+            self._handle_agent_request(msg)
+            return
+        # 3) agent 主动事件
         ev = msg.get("event")
         if ev:
             logger.info("agent[%s] event=%s params=%s", self.serial, ev, msg.get("params"))
             return
         logger.warning("agent[%s] 收到协议外消息: %s", self.serial, msg)
+
+    def _handle_agent_request(self, msg: dict) -> None:
+        """处理 agent 发来的反向 RPC 请求（目前只有 shell_exec）。"""
+        rpc_id = msg["id"]
+        method = msg["method"]
+        params = msg.get("params") or {}
+
+        if method == "shell_exec":
+            self._handle_shell_exec(rpc_id, params)
+        else:
+            resp = {"id": rpc_id, "error": {"code": -32601, "message": f"unknown method: {method}"}}
+            self._send_response(resp)
+
+    def _handle_shell_exec(self, rpc_id: str, params: dict) -> None:
+        """通过 adb 执行 shell 命令，返回结果给 agent。"""
+        cmd = params.get("cmd", "")
+        if not cmd:
+            self._send_response({"id": rpc_id, "error": {"code": -32602, "message": "cmd required"}})
+            return
+
+        # serial 格式转换：agent 用 127.0.0.1_5554，adb 用 127.0.0.1:5554
+        adb_serial = self.serial.replace("_", ":")
+        full_cmd = ["adb", "-s", adb_serial, "shell", cmd]
+
+        try:
+            result = subprocess.run(
+                full_cmd,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            resp = {
+                "id": rpc_id,
+                "result": {
+                    "code": result.returncode,
+                    "output": result.stdout,
+                    "stderr": result.stderr,
+                },
+            }
+            logger.info(
+                "agent[%s] shell_exec done: cmd=%s code=%d len=%d",
+                self.serial, cmd[:80], result.returncode, len(result.stdout),
+            )
+        except subprocess.TimeoutExpired:
+            resp = {"id": rpc_id, "error": {"code": -32002, "message": "shell_exec timeout"}}
+        except Exception as e:
+            resp = {"id": rpc_id, "error": {"code": -32603, "message": str(e)}}
+
+        self._send_response(resp)
+
+    def _send_response(self, resp: dict) -> None:
+        """向 agent 发送一帧（非协程，直接 send）。"""
+        try:
+            loop = self.loop
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self.ws.send_text(json.dumps(resp, ensure_ascii=False)), loop
+                )
+        except Exception:
+            logger.exception("agent[%s] 发送响应失败", self.serial)
 
     async def close(self, *, reason: str = "router_close") -> None:
         if self._closed:
