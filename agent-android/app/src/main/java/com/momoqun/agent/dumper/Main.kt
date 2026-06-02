@@ -65,7 +65,11 @@ object Main {
             System.err.println("mq-dumper: failed: ${t.javaClass.simpleName}: ${t.message}")
             exitCode = 1
         } finally {
-            try { ua?.disconnect() } catch (_: Throwable) {}
+            try {
+                val dm = UiAutomation::class.java.getDeclaredMethod("disconnect")
+                dm.isAccessible = true
+                dm.invoke(ua)
+            } catch (_: Throwable) {}
             try { ht.quitSafely() } catch (_: Throwable) {}
         }
 
