@@ -179,10 +179,15 @@ class AgentConnection:
             self._send_response({"id": rpc_id, "error": {"code": -32602, "message": "cmd required"}})
             return
 
-        # serial 格式转换：agent 用 127.0.0.1_5554，adb 用 127.0.0.1:5554
-        adb_serial = self.serial.replace("_", ":")
-        full_cmd = ["adb", "-s", adb_serial, "shell", cmd]
+        adb_serial = self._resolve_adb_serial()
+        if not adb_serial:
+            self._send_response({
+                "id": rpc_id,
+                "error": {"code": -32603, "message": f"no adb device found for agent serial={self.serial}"},
+            })
+            return
 
+        full_cmd = ["adb", "-s", adb_serial, "shell", cmd]
         try:
             result = subprocess.run(
                 full_cmd,
@@ -199,8 +204,8 @@ class AgentConnection:
                 },
             }
             logger.info(
-                "agent[%s] shell_exec done: cmd=%s code=%d len=%d",
-                self.serial, cmd[:80], result.returncode, len(result.stdout),
+                "agent[%s] shell_exec done: adb=%s cmd=%s code=%d len=%d",
+                self.serial, adb_serial, cmd[:80], result.returncode, len(result.stdout),
             )
         except subprocess.TimeoutExpired:
             resp = {"id": rpc_id, "error": {"code": -32002, "message": "shell_exec timeout"}}
@@ -208,6 +213,40 @@ class AgentConnection:
             resp = {"id": rpc_id, "error": {"code": -32603, "message": str(e)}}
 
         self._send_response(resp)
+
+    def _resolve_adb_serial(self) -> Optional[str]:
+        """将 agent serial 映射到 adb serial。
+
+        - 若 agent serial 本身就是 adb serial 格式（含 ':' 或 '.'）→ 直接用；
+        - 否则查 `adb devices`，只有一台在线就直接用；
+        - 多台设备时无法确定，返回 None。
+        """
+        # 1) agent serial 是 adb serial 格式
+        if ":" in self.serial or "." in self.serial:
+            return self.serial.replace("_", ":")
+
+        # 2) 查 adb devices
+        try:
+            out = subprocess.check_output(
+                ["adb", "devices"], text=True, timeout=5,
+            )
+            serials = []
+            for line in out.strip().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "device":
+                    serials.append(parts[0])
+            if len(serials) == 1:
+                return serials[0]
+            if len(serials) > 1:
+                logger.warning(
+                    "agent[%s] 有多台 adb 设备 %s，无法自动匹配，请用 IP:PORT 格式的 serial",
+                    self.serial, serials,
+                )
+                return None
+            return None
+        except Exception:
+            logger.exception("agent[%s] adb devices 查询失败", self.serial)
+            return None
 
     def _send_response(self, resp: dict) -> None:
         """向 agent 发送一帧（非协程，直接 send）。"""
