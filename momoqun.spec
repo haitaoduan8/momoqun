@@ -4,11 +4,6 @@
 # 采用 COLLECT 目录模式（非 onefile），因为运行时需要读取 config/ 和 webui/out/
 
 import os as _os
-import adbutils as _adbutils
-import uiautomator2 as _u2
-
-_adb_src = _os.path.join(_os.path.dirname(_adbutils.__file__), 'binaries')
-_u2_assets = _os.path.join(_os.path.dirname(_u2.__file__), 'assets')
 
 # 路线 C：把 agent APK / 协议文档 / 压测工具一并打到 dist/agent-bundle/
 _apk_candidates = [
@@ -46,11 +41,6 @@ a = Analysis(
     datas=[
         ('config', 'config'),
         ('data', 'data'),
-        (_os.path.join(_adb_src, 'adb.exe'), '.'),
-        (_os.path.join(_adb_src, 'AdbWinApi.dll'), '.'),
-        (_os.path.join(_adb_src, 'AdbWinUsbApi.dll'), '.'),
-        (_os.path.join(_u2_assets, 'app-uiautomator.apk'), 'assets'),
-        (_os.path.join(_u2_assets, 'u2.jar'), 'assets'),
         *_agent_datas,
         *_webui_datas,
     ],
@@ -73,8 +63,6 @@ a = Analysis(
         'fastapi.staticfiles',
         'fastapi.responses',
         # 设备 / 图像
-        'uiautomator2',
-        'adbutils',
         'cv2',
         'numpy',
         'lxml',
@@ -85,7 +73,6 @@ a = Analysis(
         'core.driver',
         'core.drivers',
         'core.drivers.base',
-        'core.drivers.u2_driver',
         'core.drivers.agent_driver',
         'core.pipeline',
         'core.chatter',

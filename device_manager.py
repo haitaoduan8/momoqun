@@ -11,11 +11,8 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-import uiautomator2 as u2
-
 from agent_router import get_router as _get_agent_router
-from core.driver import DeviceHandler  # u2 实现（默认通路）
-from core.drivers.agent_driver import AgentHandler  # 路线 C — APK Agent
+from core.drivers.agent_driver import AgentHandler  # 路线 C — APK Agent（唯一通路）
 from core.pipeline import SessionRound
 from data.storage import StorageHandler
 
@@ -46,7 +43,7 @@ class DeviceThread:
         self._thread: Optional[threading.Thread] = None
 
         # 被控组件
-        self.driver: Optional[DeviceHandler] = None
+        self.driver: Optional[AgentHandler] = None
         self.session_round: Optional[SessionRound] = None
         self.storage: Optional[StorageHandler] = None
 
@@ -211,16 +208,14 @@ class DeviceThread:
     def _run(self) -> None:
         """主循环：while running → execute_one_round() → sleep(round_end_wait_s)。
 
-        驱动选择策略 (agent-first)：
-          1. 若 ``AgentRouter`` 上有该 serial 的活跃连接 → 用 ``AgentHandler``，
-             bypass ADB / atx-agent，性能最佳；
-          2. 否则回退到 ``u2.connect(serial)`` + ``DeviceHandler``，
-             向后兼容旧部署。
+        驱动选择策略 (路线 C — 仅 Agent)：
+          若 ``AgentRouter`` 上有该 serial 的活跃连接 → 用 ``AgentHandler``；
+          否则报错（不再回退 uiautomator2）。
         """
         logger = logging.getLogger(f"device.{self.serial}")
         logger.info("设备线程启动: %s", self.name)
 
-        # ---------- 驱动选择 ----------
+        # ---------- 驱动选择（仅 Agent） ----------
         agent_conn = None
         try:
             agent_conn = _get_agent_router().get(self.serial)
@@ -228,17 +223,15 @@ class DeviceThread:
             logger.debug("agent_router 查询失败 (忽略)", exc_info=True)
 
         try:
-            if agent_conn is not None:
-                logger.info("设备 %s 检测到 APK Agent 在线，走 AgentHandler", self.serial)
-                self.driver = AgentHandler(
-                    "config/settings.yaml", serial=agent_conn.serial
+            if agent_conn is None:
+                raise RuntimeError(
+                    f"设备 {self.serial} 无在线 Agent 连接，请先在模拟器中启动 Agent"
                 )
-                self.driver.ensure_input_ime_ready()
-            else:
-                logger.info("设备 %s 未检测到 APK Agent，回退 uiautomator2", self.serial)
-                d = u2.connect(self.serial)
-                self.driver = DeviceHandler("config/settings.yaml", device=d)
-                self.driver.ensure_input_ime_ready()
+            logger.info("设备 %s 使用 APK Agent (路线 C)", self.serial)
+            self.driver = AgentHandler(
+                "config/settings.yaml", serial=agent_conn.serial
+            )
+            self.driver.ensure_input_ime_ready()
         except Exception:
             logger.exception("连接设备失败: %s", self.serial)
             with self._lock:

@@ -13,7 +13,6 @@ import logging
 import os
 import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -26,26 +25,6 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-# Windows: 禁止子进程弹出控制台窗口
-_WIN_FLAGS = 0x08000000 if sys.platform == "win32" else 0
-
-# PyInstaller 打包后资源路径：spec 里把 assets/* 放到了 ./assets/
-def _get_assets_dir() -> str:
-    """返回 uiautomator2 资源目录（兼容 PyInstaller 和开发模式）。"""
-    if getattr(sys, "frozen", False):
-        # COLLECT 模式下资源在 exe 同级目录，不用 _MEIPASS（有时指向 _internal）
-        base = os.path.dirname(sys.executable)
-        path = os.path.join(base, "assets")
-        if os.path.isdir(path):
-            return path
-        # 回退：_MEIPASS + assets
-        path = os.path.join(sys._MEIPASS, "assets")
-        if os.path.isdir(path):
-            return path
-        return sys._MEIPASS
-    # 开发模式：从 uiautomator2 包里找
-    import uiautomator2 as _u2
-    return os.path.join(os.path.dirname(_u2.__file__), "assets")
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -270,138 +249,6 @@ async def api_master_address():
         "port": MASTER_PORT,
         "ws_urls": [f"ws://{ip}:{MASTER_PORT}" for ip in addresses],
     }
-
-
-# ---------------------------------------------------------------------------
-# ADB API
-# ---------------------------------------------------------------------------
-@app.get("/api/adb/devices")
-async def api_adb_devices():
-    try:
-        result = subprocess.run(
-            ["adb", "devices", "-l"], capture_output=True, text=True, timeout=10,
-            creationflags=_WIN_FLAGS,
-        )
-        lines = (result.stdout or "").strip().split("\n")[1:]
-        devices = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == "device":
-                serial = parts[0]
-                info = " ".join(parts[2:]) if len(parts) > 2 else ""
-                devices.append({"serial": serial, "info": info, "state": "device"})
-        return {"devices": devices}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.post("/api/adb/connect")
-async def api_adb_connect(data: dict = None):
-    if not isinstance(data, dict):
-        data = {}
-    addr = (data.get("address") or "").strip()
-    if not addr:
-        return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
-    try:
-        result = subprocess.run(
-            ["adb", "connect", addr], capture_output=True, text=True, timeout=15,
-            creationflags=_WIN_FLAGS,
-        )
-        output = (result.stdout or "").strip()
-        # adb connect 成功时输出包含 "connected"（包括 "already connected"）
-        ok = "connected" in output.lower()
-        return {"ok": ok, "output": output}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-
-
-@app.post("/api/adb/disconnect")
-async def api_adb_disconnect(data: dict = None):
-    if not isinstance(data, dict):
-        data = {}
-    addr = (data.get("address") or "").strip()
-    if not addr:
-        return JSONResponse({"ok": False, "error": "请提供 address"}, status_code=400)
-    try:
-        subprocess.run(
-            ["adb", "disconnect", addr], capture_output=True, text=True, timeout=10,
-            creationflags=_WIN_FLAGS,
-        )
-        return {"ok": True}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-
-
-@app.post("/api/adb/init")
-async def api_adb_init(data: dict = None):
-    """初始化设备：安装 ATX agent (含 ADB Keyboard) + 推送 u2.jar。
-    用纯 adb 命令，不依赖 Python，PyInstaller EXE 环境可用。"""
-    if not isinstance(data, dict):
-        data = {}
-    serial = (data.get("serial") or "").strip()
-    if not serial:
-        return JSONResponse({"ok": False, "error": "请提供 serial"}, status_code=400)
-
-    assets_dir = _get_assets_dir()
-    apk_path = os.path.join(assets_dir, "app-uiautomator.apk")
-    jar_path = os.path.join(assets_dir, "u2.jar")
-
-    if not os.path.isfile(apk_path):
-        return JSONResponse({"ok": False, "error": f"APK 文件不存在: {apk_path}"}, status_code=500)
-    if not os.path.isfile(jar_path):
-        return JSONResponse({"ok": False, "error": f"JAR 文件不存在: {jar_path}"}, status_code=500)
-
-    outputs = []
-
-    # 1. 安装 ATX agent APK（包含 ADB Keyboard IME）
-    try:
-        result = subprocess.run(
-            ["adb", "-s", serial, "install", "-r", apk_path],
-            capture_output=True, text=True, timeout=120,
-            creationflags=_WIN_FLAGS,
-        )
-        out = (result.stdout or "").strip() + "\n" + (result.stderr or "").strip()
-        outputs.append(f"[APK] {out.strip()}")
-        if result.returncode != 0 and "Success" not in out:
-            return {"ok": False, "output": "\n".join(outputs),
-                    "error": f"APK 安装失败 (code={result.returncode})"}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": f"安装 APK 失败: {e}"}, status_code=500)
-
-    # 2. 推送 u2.jar 到设备
-    try:
-        result = subprocess.run(
-            ["adb", "-s", serial, "push", jar_path, "/data/local/tmp/u2.jar"],
-            capture_output=True, text=True, timeout=30,
-            creationflags=_WIN_FLAGS,
-        )
-        out = (result.stdout or "").strip()
-        outputs.append(f"[JAR] {out}")
-    except Exception as e:
-        outputs.append(f"[JAR] 推送失败: {e}")
-
-    # 3. 启用并切换到 ADB Keyboard（雷电等模拟器需要 ime enable 先）
-    ime_id = "com.github.uiautomator/.AdbKeyboard"
-    try:
-        subprocess.run(
-            ["adb", "-s", serial, "shell", "ime", "enable", ime_id],
-            capture_output=True, text=True, timeout=10,
-            creationflags=_WIN_FLAGS,
-        )
-        result = subprocess.run(
-            ["adb", "-s", serial, "shell", "ime", "set", ime_id],
-            capture_output=True, text=True, timeout=10,
-            creationflags=_WIN_FLAGS,
-        )
-        out = (result.stdout or "").strip() or (result.stderr or "").strip()
-        outputs.append(f"[IME] {out or '已切换'}")
-    except Exception as e:
-        outputs.append(f"[IME] 切换失败: {e}")
-
-    return {"ok": True, "output": "\n".join(outputs)}
 
 
 # ---------------------------------------------------------------------------

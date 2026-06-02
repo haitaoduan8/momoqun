@@ -3,7 +3,5 @@ uvicorn[standard]
 websockets
 pyyaml
 pyinstaller
-uiautomator2
-adbutils
 opencv-python
 numpy

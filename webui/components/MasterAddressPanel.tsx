@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getMasterAddress,
   getAgents,
+  addDevice,
+  deviceAction,
   type MasterAddress,
   type OnlineAgent,
 } from "@/lib/api";
@@ -15,18 +17,20 @@ import {
   Cpu,
   RefreshCw,
   Wifi,
+  Play,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 /**
  * 路线 C：展示 master 连接地址（ws://本机IP:端口，可一键复制下发给模拟器 Agent），
- * 并轮询在线 Agent 状态，直接回答“哪些模拟器连上了”。
+ * 并轮询在线 Agent 状态，每个 Agent 旁带「开始」按钮。
  */
 export function MasterAddressPanel() {
   const [master, setMaster] = useState<MasterAddress | null>(null);
   const [masterErr, setMasterErr] = useState<string | null>(null);
   const [agents, setAgents] = useState<OnlineAgent[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [starting, setStarting] = useState<string | null>(null);
 
   // master 地址：拿一次即可（IP/端口运行期不变）
   useEffect(() => {
@@ -77,6 +81,20 @@ export function MasterAddressPanel() {
       setTimeout(() => setCopied((c) => (c === text ? null : c)), 1500);
     } catch {
       // 复制失败就让用户手动选中
+    }
+  };
+
+  const handleStart = async (serial: string) => {
+    setStarting(serial);
+    try {
+      // 先确保设备已添加到 DeviceManager
+      await addDevice(serial, serial).catch(() => {});
+      // 启动脚本
+      await deviceAction("start", serial);
+    } catch (e) {
+      console.error("启动失败:", e);
+    } finally {
+      setStarting(null);
     }
   };
 
@@ -184,7 +202,19 @@ export function MasterAddressPanel() {
                   key={a.serial}
                   className="flex items-center justify-between gap-3 p-3 rounded-lg bg-bg-card border border-accent/6"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    onClick={() => handleStart(a.serial)}
+                    disabled={starting === a.serial}
+                    title="添加并启动脚本"
+                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-neon-green/10 text-neon-green hover:bg-neon-green/20 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {starting === a.serial ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                  </button>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="w-2 h-2 rounded-full bg-neon-green shrink-0 animate-pulse" />
                     <span className="font-mono text-sm text-white truncate">
                       {a.serial}

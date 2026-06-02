@@ -17,7 +17,6 @@ import signal
 import sys
 import time
 
-import uiautomator2 as u2
 import yaml
 
 from device_manager import DeviceThread
@@ -62,17 +61,12 @@ def main() -> None:
         logging.exception("加载配置失败")
         sys.exit(1)
 
-    # 解析 serial（自动检测时从 u2 拿 serial）
+    # 解析 serial（路线 C 要求必须指定）
     resolved_serial = args.serial
     if not resolved_serial:
-        try:
-            d_tmp = u2.connect()
-            resolved_serial = (d_tmp.info or {}).get("serial") or getattr(d_tmp, "serial", None)
-        except Exception:
-            resolved_serial = None
-        logger.info("自动检测设备: %s", resolved_serial or "(unknown)")
-    else:
-        logger.info("指定设备: %s", resolved_serial)
+        logger.error("路线 C 模式下必须通过 --serial 指定设备序列号")
+        sys.exit(1)
+    logger.info("指定设备: %s", resolved_serial)
 
     # per-device storage
     storage = StorageHandler.for_serial(resolved_serial)

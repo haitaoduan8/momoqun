@@ -35,7 +35,7 @@ export async function getMasterAddress(): Promise<MasterAddress> {
   return fetchAPI("/api/master-address");
 }
 
-// ============ 在线 Agent（路线 C WebSocket，非 ADB 设备） ============
+// ============ 在线 Agent（路线 C WebSocket） ============
 
 export interface OnlineAgent {
   serial: string;
@@ -46,39 +46,6 @@ export interface OnlineAgent {
 
 export async function getAgents(): Promise<{ agents: OnlineAgent[] }> {
   return fetchAPI("/api/agents");
-}
-
-// ============ ADB 设备管理 ============
-
-export interface AdbDevice {
-  serial: string;
-  state: string;
-  info: string;
-}
-
-export async function getAdbDevices(): Promise<{ devices: AdbDevice[] }> {
-  return fetchAPI("/api/adb/devices");
-}
-
-export async function connectAdb(address: string): Promise<{ ok: boolean; error?: string }> {
-  return fetchAPI("/api/adb/connect", {
-    method: "POST",
-    body: JSON.stringify({ address }),
-  });
-}
-
-export async function disconnectAdb(address: string): Promise<{ ok: boolean; error?: string }> {
-  return fetchAPI("/api/adb/disconnect", {
-    method: "POST",
-    body: JSON.stringify({ address }),
-  });
-}
-
-export async function initAdb(serial: string): Promise<{ ok: boolean; error?: string }> {
-  return fetchAPI("/api/adb/init", {
-    method: "POST",
-    body: JSON.stringify({ serial }),
-  });
 }
 
 // ============ 设备管理 ============

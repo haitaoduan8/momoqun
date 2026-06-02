@@ -3,7 +3,6 @@
 import { SplineRobot } from "@/components/SplineRobot";
 import { Dashboard } from "@/components/Dashboard";
 import { LogArea } from "@/components/LogArea";
-import { AdbPanel } from "@/components/AdbPanel";
 import { MasterAddressPanel } from "@/components/MasterAddressPanel";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { AccountCheckPanel } from "@/components/AccountCheckPanel";
@@ -195,11 +194,6 @@ function DevicesPage() {
       {/* Master 地址 + 在线 Agent（路线 C） */}
       <section>
         <MasterAddressPanel />
-      </section>
-
-      {/* ADB 设备连接 */}
-      <section>
-        <AdbPanel />
       </section>
 
       {/* 控制面板 */}

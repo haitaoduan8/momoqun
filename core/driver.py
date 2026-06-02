@@ -1,7 +1,6 @@
 """向后兼容 shim：``from core.driver import DeviceHandler`` 仍然可用。
 
-新代码请直接 ``from core.drivers.u2_driver import DeviceHandler`` 或
-``from core.drivers import Driver, DeviceProxy``。
+路线 C 唯一通路：AgentHandler。
 """
 
-from core.drivers.u2_driver import DeviceHandler  # noqa: F401
+from core.drivers.agent_driver import AgentHandler as DeviceHandler  # noqa: F401

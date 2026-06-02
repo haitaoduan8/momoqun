@@ -256,7 +256,7 @@ export function Dashboard() {
               <Smartphone className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">暂无设备</p>
             <p className="text-sm text-muted-foreground mt-2">
-              请在上方「ADB 设备连接」面板连接并添加设备
+              请在上方「在线 Agent」面板点击 ▶ 按钮启动设备
             </p>
             </CardContent>
           </Card>
