@@ -19,11 +19,9 @@ object ShellHelper {
     }
 
     fun exec(cmd: String, timeoutSec: Long = 10): Result {
-        val escaped = cmd.replace("'", "'\\''")
-        val rootCmd = "su -c '$escaped'"
-        Log.d(TAG, "exec: ${rootCmd.take(200)}")
+        Log.d(TAG, "exec: su -c ${cmd.take(200)}")
         return try {
-            val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", rootCmd))
+            val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
             val stdout = BufferedReader(InputStreamReader(proc.inputStream)).use { it.readText() }
             val stderr = BufferedReader(InputStreamReader(proc.errorStream)).use { it.readText() }
             val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)

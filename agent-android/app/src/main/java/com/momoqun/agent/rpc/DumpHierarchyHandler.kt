@@ -1,6 +1,7 @@
 package com.momoqun.agent.rpc
 
 import android.util.Log
+import com.momoqun.agent.AgentApp
 import com.momoqun.agent.util.ShellHelper
 import com.momoqun.agent.ws.RpcError
 import org.json.JSONObject
@@ -46,6 +47,19 @@ object DumpHierarchyHandler {
 
     private fun resolveApkPath(): String? {
         cachedApkPath?.let { return it }
+        try {
+            val fromPm = AgentApp.instance.packageManager
+                .getApplicationInfo(PKG, 0)
+                .sourceDir
+                ?.trim()
+            if (!fromPm.isNullOrEmpty()) {
+                cachedApkPath = fromPm
+                Log.d(TAG, "resolved apk path (PackageManager): $fromPm")
+                return fromPm
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "PackageManager apk path failed", e)
+        }
         val result = ShellHelper.exec("pm path $PKG", timeoutSec = 8)
         val path = result.output.lineSequence()
             .map { it.trim() }
@@ -54,10 +68,10 @@ object DumpHierarchyHandler {
             ?.trim()
         if (!path.isNullOrEmpty()) {
             cachedApkPath = path
-            Log.d(TAG, "resolved apk path: $path")
+            Log.d(TAG, "resolved apk path (su pm): $path")
             return path
         }
-        Log.w(TAG, "pm path failed: code=${result.code} out=${result.output.take(200)}")
+        Log.w(TAG, "pm path failed: code=${result.code} out=${result.output.take(200)} stderr=${result.stderr.take(120)}")
         return null
     }
 }
