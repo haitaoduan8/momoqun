@@ -2,7 +2,6 @@ package com.momoqun.agent.util
 
 import android.util.Log
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
@@ -39,10 +38,12 @@ object ShellHelper {
         }.distinct()
         var last: Result = Result(-1, "", "no su binary found")
         for (su in suPaths) {
-            if (su != "su" && !File(su).exists()) continue
             Log.d(TAG, "exec: $su -c ${cmd.take(200)}")
             val r = execWithSu(su, cmd, timeoutSec)
-            if (r.stderr.contains("No such file or directory") && r.code == -1 && r.output.isEmpty()) {
+            val missingSu = r.code == -1 && r.output.isEmpty() &&
+                (r.stderr.contains("No such file or directory") ||
+                    r.stderr.contains("Cannot run program"))
+            if (missingSu) {
                 last = r
                 continue
             }
