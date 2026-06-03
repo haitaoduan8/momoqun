@@ -21,7 +21,6 @@ object ShellHelper {
         "/system/xbin/su",
         "/system/sbin/su",
         "su",
-        "/data/adb/magisk/magisk",
     )
 
     @Volatile
@@ -41,11 +40,13 @@ object ShellHelper {
             Log.d(TAG, "exec: $su -c ${cmd.take(200)}")
             val r = execWithSu(su, cmd, timeoutSec)
             val missingSu = r.code == -1 && r.output.isEmpty() &&
-                (r.stderr.contains("No such file or directory") ||
-                    r.stderr.contains("Cannot run program"))
+                r.stderr.contains("No such file or directory")
             if (missingSu) {
                 last = r
                 continue
+            }
+            if (r.stderr.contains("Permission denied")) {
+                Log.w(TAG, "su denied for app ($su): grant root to com.momoqun.agent in Magisk")
             }
             cachedSuPath = su
             return r
