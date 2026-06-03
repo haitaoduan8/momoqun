@@ -84,6 +84,7 @@ a = Analysis(
         'core.account_check',
         # 路线 C 反向 RPC
         'agent_router',
+        'auth',
         # 数据层
         'data',
         'data.storage',

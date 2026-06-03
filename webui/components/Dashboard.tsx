@@ -1,11 +1,13 @@
 'use client';
 
 import { Card, CardContent } from "@/components/ui/card";
-import { useDevices, useStats, useAccountCheck } from "@/lib/hooks";
 import {
   deviceAction,
   removeDevice,
   dismissAccountCheck,
+  type Device,
+  type Stats,
+  type AccountCheckStatus,
 } from "@/lib/api";
 import {
   Smartphone,
@@ -21,6 +23,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+export type DashboardViewProps = {
+  devices: Device[];
+  stats: Stats | null;
+  accountCheck: AccountCheckStatus | null;
+  loading: boolean;
+  refresh: () => void | Promise<void>;
+};
+
 // 设备卡片组件
 function DeviceCard({
   name,
@@ -28,15 +38,17 @@ function DeviceCard({
   status,
   rounds,
   friends,
+  statusHint,
   onStart,
   onPause,
   onRemove,
 }: {
   name: string;
   serial: string;
-  status: "running" | "paused" | "stopped" | "error";
+  status: "running" | "paused" | "stopped" | "error" | "waiting_agent";
   rounds: number;
   friends: number;
+  statusHint?: string;
   onStart: () => void | Promise<void>;
   onPause: () => void | Promise<void>;
   onRemove: () => void | Promise<void>;
@@ -48,6 +60,7 @@ function DeviceCard({
     paused: "bg-neon-yellow",
     stopped: "bg-gray-500",
     error: "bg-neon-red",
+    waiting_agent: "bg-neon-yellow animate-pulse",
   };
 
   const statusLabels = {
@@ -55,6 +68,7 @@ function DeviceCard({
     paused: "已暂停",
     stopped: "已停止",
     error: "错误",
+    waiting_agent: "等待 Agent",
   };
 
   const handleAction = async (action: string, fn: () => void | Promise<void>) => {
@@ -86,6 +100,9 @@ function DeviceCard({
             </span>
           </div>
         </div>
+        {statusHint && (
+          <p className="text-xs text-neon-yellow mb-3">{statusHint}</p>
+        )}
 
         <div className="flex gap-4 mb-4 text-sm">
           <div>
@@ -143,7 +160,6 @@ function DeviceCard({
   );
 }
 
-// 统计卡片组件
 function StatCard({
   title,
   value,
@@ -151,7 +167,7 @@ function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
     <Card className="relative overflow-hidden border-glow">
@@ -170,49 +186,48 @@ function StatCard({
   );
 }
 
-// 主控制面板
-export function Dashboard() {
-  const { devices, loading: devicesLoading, refresh: refreshDevices } = useDevices();
-  const { stats, loading: statsLoading } = useStats();
-  const { status: accountStatus, refresh: refreshAccount } = useAccountCheck();
-
+export function Dashboard({
+  devices,
+  stats,
+  accountCheck,
+  loading: devicesLoading,
+  refresh,
+}: DashboardViewProps) {
   const handleStart = async (serial: string) => {
     await deviceAction("start", serial);
-    refreshDevices();
+    await refresh();
   };
 
   const handleResume = async (serial: string) => {
     await deviceAction("resume", serial);
-    refreshDevices();
+    await refresh();
   };
 
   const handlePause = async (serial: string) => {
     await deviceAction("pause", serial);
-    refreshDevices();
+    await refresh();
   };
 
   const handleRemove = async (serial: string) => {
     await removeDevice(serial);
-    refreshDevices();
+    await refresh();
   };
 
   const handleDismiss = async (serial: string) => {
     await dismissAccountCheck(serial);
-    refreshAccount();
+    await refresh();
   };
 
-  // 计算统计数据
   const totalDevices = devices.length;
   const runningDevices = devices.filter((d) => d.state === "running").length;
   const totalFriends = devices.reduce((sum, d) => sum + (d.friends_total || 0), 0);
   const abnormalAccounts =
-    accountStatus?.devices.filter((d) =>
+    accountCheck?.devices.filter((d) =>
       ["abnormal", "unknown", "error"].includes(d.account_status)
     ) || [];
 
   return (
     <div className="space-y-6">
-      {/* 统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="在线设备"
@@ -231,12 +246,11 @@ export function Dashboard() {
         />
         <StatCard
           title="本轮新增好友"
-          value={statsLoading || !stats ? "..." : (stats.friends_this_round ?? 0)}
+          value={devicesLoading || !stats ? "..." : (stats.friends_this_round ?? 0)}
           icon={RefreshCw}
         />
       </div>
 
-      {/* 设备列表 */}
       <div>
         <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
           <Settings className="w-5 h-5 text-accent" />
@@ -254,36 +268,49 @@ export function Dashboard() {
           <Card className="border-glow">
             <CardContent className="p-12 text-center">
               <Smartphone className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">暂无设备</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              请在上方「在线 Agent」面板点击 ▶ 按钮启动设备
-            </p>
+              <p className="text-muted-foreground">暂无设备</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                请在上方「在线 Agent」面板点击 ▶ 按钮启动设备
+              </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {devices.map((device) => (
-              <DeviceCard
-                key={device.serial}
-                name={device.name || device.serial}
-                serial={device.serial}
-                status={device.state}
-                rounds={device.round_number || 0}
-                friends={device.friends_total || 0}
-                onStart={() =>
-                  device.state === "paused"
-                    ? handleResume(device.serial)
-                    : handleStart(device.serial)
-                }
-                onPause={() => handlePause(device.serial)}
-                onRemove={() => handleRemove(device.serial)}
-              />
-            ))}
+            {devices.map((device) => {
+              const waiting =
+                device.current_phase === "waiting_agent" ||
+                (device.error || "").includes("Agent");
+              const displayStatus = waiting ? "waiting_agent" : device.state;
+              return (
+                <DeviceCard
+                  key={device.serial}
+                  name={device.name || device.serial}
+                  serial={device.serial}
+                  status={
+                    displayStatus as
+                      | "running"
+                      | "paused"
+                      | "stopped"
+                      | "error"
+                      | "waiting_agent"
+                  }
+                  statusHint={waiting ? device.error || "等待 Agent 连接…" : undefined}
+                  rounds={device.round_number || 0}
+                  friends={device.friends_total || 0}
+                  onStart={() =>
+                    device.state === "paused"
+                      ? handleResume(device.serial)
+                      : handleStart(device.serial)
+                  }
+                  onPause={() => handlePause(device.serial)}
+                  onRemove={() => handleRemove(device.serial)}
+                />
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* 账号检测 */}
       {abnormalAccounts.length > 0 && (
         <div>
           <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
@@ -302,15 +329,13 @@ export function Dashboard() {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-mono text-sm text-white">
-                        {account.serial}
-                      </p>
+                      <p className="font-mono text-sm text-white">{account.serial}</p>
                       <p className="text-xs text-neon-red mt-1">
                         {account.account_status === "abnormal"
                           ? "账号异常"
                           : account.account_status === "error"
-                          ? "检测失败"
-                          : "未知状态"}
+                            ? "检测失败"
+                            : "未知状态"}
                       </p>
                     </div>
                     <button

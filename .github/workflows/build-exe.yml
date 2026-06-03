@@ -52,22 +52,23 @@ jobs:
           path: momoqun-Windows.zip
 
       - name: Create Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          name: momoqun-Windows-latest
-          tag_name: latest
+          name: momoqun-Windows-${{ github.run_number }}
+          tag_name: v0.1.${{ github.run_number }}
           files: momoqun-Windows.zip
           prerelease: false
           body: |
             ## momoqun Windows EXE
 
-            自动构建于 ${{ github.sha }}。
+            自动构建于 ${{ github.sha }}（run #${{ github.run_number }}）。
 
             ### 使用方法
             1. 下载 `momoqun-Windows.zip`
             2. 解压到任意目录
             3. 运行 `momoqun.exe`
-            4. 手机通过 USB 连接电脑，开启 USB 调试
+            4. 模拟器安装 Agent APK，填写 master 地址与 API Token
             5. 浏览器自动打开 `http://localhost:5100` 进入管理界面
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -31,6 +31,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("agent_router")
 
+# 协议约定：30s 无帧则 master 主动断开（见 docs/agent-protocol.md）
+_DEFAULT_HEARTBEAT_TIMEOUT_S = 30.0
+_WATCHDOG_INTERVAL_S = 10.0
+
 
 # ---------------------------------------------------------------------------
 # 错误类
@@ -174,6 +178,26 @@ class AgentConnection:
 
     def _handle_shell_exec(self, rpc_id: str, params: dict) -> None:
         """通过 adb 执行 shell 命令，返回结果给 agent。"""
+        try:
+            from auth import allow_shell_exec
+
+            if not allow_shell_exec():
+                self._send_response({
+                    "id": rpc_id,
+                    "error": {
+                        "code": ERR_NOT_AUTHORIZED,
+                        "message": "shell_exec disabled (security.allow_shell_exec=false)",
+                    },
+                })
+                return
+        except Exception:
+            logger.exception("agent[%s] shell_exec 鉴权检查失败", self.serial)
+            self._send_response({
+                "id": rpc_id,
+                "error": {"code": ERR_NOT_AUTHORIZED, "message": "shell_exec check failed"},
+            })
+            return
+
         cmd = params.get("cmd", "")
         if not cmd:
             self._send_response({"id": rpc_id, "error": {"code": -32602, "message": "cmd required"}})
@@ -385,17 +409,60 @@ def get_router() -> AgentRouter:
 
 
 # ---------------------------------------------------------------------------
+# 心跳看门狗
+# ---------------------------------------------------------------------------
+async def _heartbeat_watchdog(router: AgentRouter) -> None:
+    """周期检查 idle 连接，超过阈值则关闭（与 agent-protocol 一致）。"""
+    try:
+        from auth import heartbeat_timeout_sec
+
+        timeout_s = heartbeat_timeout_sec()
+    except Exception:
+        timeout_s = _DEFAULT_HEARTBEAT_TIMEOUT_S
+
+    while True:
+        await asyncio.sleep(_WATCHDOG_INTERVAL_S)
+        now = time.time()
+        stale: list = []
+        for conn in list(router._conns.values()):
+            idle = now - conn.last_seen_at
+            if idle > timeout_s:
+                stale.append((conn, idle))
+        for conn, idle in stale:
+            logger.warning(
+                "agent[%s] 心跳超时 (idle %.1fs > %.0fs)，关闭连接",
+                conn.serial,
+                idle,
+                timeout_s,
+            )
+            try:
+                await router.unregister(conn, reason="heartbeat_timeout")
+            except Exception:
+                logger.exception("agent[%s] 心跳超时注销失败", conn.serial)
+
+
+# ---------------------------------------------------------------------------
 # FastAPI 路由挂载
 # ---------------------------------------------------------------------------
 def mount_agent_routes(app: FastAPI, router: Optional[AgentRouter] = None) -> AgentRouter:
     router = router or get_router()
 
-    @app.on_event("startup")
-    async def _bind_loop():
-        router.bind_loop(asyncio.get_event_loop())
-
     @app.websocket("/agent/{serial}")
     async def _agent_ws(ws: WebSocket, serial: str):
+        try:
+            from auth import auth_enabled, verify_token
+
+            if auth_enabled():
+                token = (ws.query_params.get("token") or "").strip()
+                if not verify_token(token):
+                    await ws.close(code=4401, reason="unauthorized")
+                    logger.warning("agent[%s] WebSocket 鉴权失败", serial)
+                    return
+        except Exception:
+            logger.exception("agent[%s] WebSocket 鉴权检查异常", serial)
+            await ws.close(code=1011, reason="auth check error")
+            return
+
         await ws.accept()
         conn = await router.register(serial, ws)
         try:

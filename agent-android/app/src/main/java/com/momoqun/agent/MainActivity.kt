@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
         AgentConfig.load(this)?.let {
             binding.inputMaster.setText(it.masterUrl)
             binding.inputSerial.setText(it.serial)
+            binding.inputToken.setText(it.apiToken)
         }
 
         binding.btnStart.setOnClickListener { startAgent() }
@@ -64,11 +65,12 @@ class MainActivity : AppCompatActivity() {
     private fun startAgent() {
         val master = binding.inputMaster.text?.toString()?.trim().orEmpty()
         val serial = binding.inputSerial.text?.toString()?.trim().orEmpty()
+        val token = binding.inputToken.text?.toString()?.trim().orEmpty()
         if (master.isEmpty() || serial.isEmpty()) {
             binding.status.text = "master / serial 不能为空"
             return
         }
-        val cfg = AgentConfig(master, serial)
+        val cfg = AgentConfig(master, serial, token)
         AgentConfig.save(this, cfg)
 
         val intent = Intent(this, AgentForegroundService::class.java).apply {

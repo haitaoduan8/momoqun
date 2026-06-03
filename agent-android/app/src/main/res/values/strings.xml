@@ -11,6 +11,7 @@
 
     <string name="hint_master">Master 地址（ws://host:port）</string>
     <string name="hint_serial">Serial（如 emu-5554）</string>
+    <string name="hint_token">API Token（启用鉴权时必填）</string>
     <string name="btn_start">启动 Agent</string>
     <string name="btn_stop">停止 Agent</string>
     <string name="btn_open_a11y">打开无障碍设置</string>

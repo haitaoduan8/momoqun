@@ -6,11 +6,12 @@ build/
 *.spec.bak
 .venv/
 venv/
-__pycache__/
 *.egg-info/
 .idea/
 .vscode/
 *.log
+.pytest_cache/
+.coverage
 
 # macOS
 .DS_Store
@@ -25,3 +26,4 @@ webui/node_modules/
 webui/.next/
 webui/out/
 webui/.env.local
+webui/tsconfig.tsbuildinfo

@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getMasterAddress,
-  getAgents,
   addDevice,
   deviceAction,
   type MasterAddress,
@@ -19,16 +18,21 @@ import {
   Wifi,
   Play,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * 路线 C：展示 master 连接地址（ws://本机IP:端口，可一键复制下发给模拟器 Agent），
- * 并轮询在线 Agent 状态，每个 Agent 旁带「开始」按钮。
+ * 并展示在线 Agent 状态，每个 Agent 旁带「开始」按钮。
  */
-export function MasterAddressPanel() {
+export function MasterAddressPanel({
+  agents = [],
+  onRefreshAgents,
+}: {
+  agents?: OnlineAgent[];
+  onRefreshAgents?: () => void | Promise<void>;
+}) {
   const [master, setMaster] = useState<MasterAddress | null>(null);
   const [masterErr, setMasterErr] = useState<string | null>(null);
-  const [agents, setAgents] = useState<OnlineAgent[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
 
@@ -46,22 +50,6 @@ export function MasterAddressPanel() {
       alive = false;
     };
   }, []);
-
-  // 在线 agent：轮询
-  const refreshAgents = useCallback(async () => {
-    try {
-      const { agents } = await getAgents();
-      setAgents(agents || []);
-    } catch {
-      // 静默：master 还没起或网络抖动时不打扰
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshAgents();
-    const timer = setInterval(refreshAgents, 4000);
-    return () => clearInterval(timer);
-  }, [refreshAgents]);
 
   const handleCopy = async (text: string) => {
     try {
@@ -166,7 +154,26 @@ export function MasterAddressPanel() {
             <p className="text-xs text-muted-foreground">
               复制后填到模拟器 Agent 的 master 输入框即可，Agent 会自动拼
               <span className="font-mono"> /agent/&lt;serial&gt;</span>，无需手填后缀。
+              {master?.auth_required && (
+                <>
+                  {" "}
+                  若启用鉴权，请在 Agent 填写相同的 API Token。
+                </>
+              )}
             </p>
+            {master?.api_token && (
+              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-bg-card border border-accent/6">
+                <span className="text-xs text-muted-foreground shrink-0">API Token</span>
+                <span className="font-mono text-sm text-white truncate">{master.api_token}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(master.api_token!)}
+                  className="text-xs text-accent shrink-0 hover:underline"
+                >
+                  复制
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -179,9 +186,10 @@ export function MasterAddressPanel() {
               ({agents.length} 台)
             </span>
             <button
-              onClick={refreshAgents}
+              onClick={() => onRefreshAgents?.()}
               title="刷新在线 Agent"
-              className="ml-auto text-muted-foreground hover:text-white transition-colors"
+              disabled={!onRefreshAgents}
+              className="ml-auto text-muted-foreground hover:text-white transition-colors disabled:opacity-40"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>

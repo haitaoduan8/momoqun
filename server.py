@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import collections
 import ipaddress
@@ -16,14 +17,26 @@ import socket
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
 import uvicorn
 import yaml
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from auth import (
+    auth_enabled,
+    auth_status_payload,
+    get_api_token,
+    get_token_from_request,
+    load_security_config,
+    verify_token,
+)
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -36,10 +49,43 @@ ELEMENTS_PATH = os.path.join(BASE, "config", "elements.yaml")
 MASTER_PORT = 5100
 
 # ---------------------------------------------------------------------------
-# FastAPI app
+# FastAPI app（lifespan：鉴权配置 + Agent 心跳看门狗）
 # ---------------------------------------------------------------------------
-app = FastAPI(title="momoqun", docs_url=None, redoc_url=None)
 logger = logging.getLogger("server")
+_agent_watchdog_task: Any = None
+
+
+@asynccontextmanager
+async def _app_lifespan(application: FastAPI):
+    global _agent_watchdog_task
+    try:
+        load_security_config(_load_settings())
+    except Exception:
+        logger.exception("加载鉴权配置失败")
+    try:
+        from agent_router import get_router, _heartbeat_watchdog
+
+        router = get_router()
+        router.bind_loop(asyncio.get_running_loop())
+        _agent_watchdog_task = asyncio.create_task(
+            _heartbeat_watchdog(router),
+            name="agent-heartbeat-watchdog",
+        )
+        logger.info("Agent 心跳看门狗已启动")
+    except Exception:
+        logger.exception("启动 Agent 心跳看门狗失败")
+    yield
+    if _agent_watchdog_task is not None:
+        _agent_watchdog_task.cancel()
+        try:
+            await _agent_watchdog_task
+        except asyncio.CancelledError:
+            pass
+        _agent_watchdog_task = None
+        logger.info("Agent 心跳看门狗已停止")
+
+
+app = FastAPI(title="momoqun", docs_url=None, redoc_url=None, lifespan=_app_lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -76,13 +122,31 @@ def _install_ring_log_handler() -> None:
     h.setLevel(logging.INFO)
     root.addHandler(h)
 
-# CORS：Flet Web 在 localhost:8550 调 API 需要跨域
+# CORS：Web UI 跨域调 API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    """API 鉴权：security.api_token 非空时要求 Bearer / X-Momoqun-Token。"""
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if path == "/api/auth/status":
+        return await call_next(request)
+    if not auth_enabled():
+        return await call_next(request)
+    if not verify_token(get_token_from_request(request)):
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "error": "未授权", "code": "unauthorized"},
+        )
+    return await call_next(request)
 
 
 # 挂载 APK Agent WebSocket 路由（路线 C）
@@ -113,7 +177,23 @@ async def test_rpc(body: dict):
         return {"ok": False, "error": str(e), "type": type(e).__name__}
 
 
-# 全局异常处理器：确保所有错误都返回 JSON（而不是 HTML 500 页面）
+# 全局异常处理器
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"ok": False, "error": exc.detail, "code": "http_error"},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"ok": False, "error": "参数校验失败", "code": "validation_error", "detail": exc.errors()},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("未捕获的异常: %s", exc)
@@ -249,8 +329,14 @@ def _detect_host_ipv4() -> List[str]:
     return candidates
 
 
+@app.get("/api/auth/status")
+async def api_auth_status():
+    """鉴权状态（公开）。Web UI 用于判断是否需输入 Token。"""
+    return auth_status_payload()
+
+
 @app.get("/api/master-address")
-async def api_master_address():
+async def api_master_address(request: Request):
     """返回本机可供模拟器 Agent 连接的 master 地址。
 
     addresses 第一个为默认路由出口 IP（标“推荐”）；ws_urls 直接可复制下发。
@@ -261,11 +347,17 @@ async def api_master_address():
     except Exception as e:
         logger.exception("探测本机地址失败: %s", e)
         addresses = []
-    return {
+    payload: Dict[str, Any] = {
         "addresses": addresses,
         "port": MASTER_PORT,
         "ws_urls": [f"ws://{ip}:{MASTER_PORT}" for ip in addresses],
+        **auth_status_payload(),
     }
+    if auth_enabled() and verify_token(get_token_from_request(request)):
+        token = get_api_token()
+        if token:
+            payload["api_token"] = token
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -417,21 +509,15 @@ async def api_account_check_dismiss(data: dict = None):
 
 
 # ---------------------------------------------------------------------------
-# 统计 API
+# 聚合 API（减少 Web UI 轮询次数）
 # ---------------------------------------------------------------------------
-@app.get("/api/stats")
-async def api_stats():
-    """返回好友统计 + 会话状态快照（聚合所有 per-device 文件）。"""
+def _build_stats_payload(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         from data.storage import aggregate_count_by_status
         counts = aggregate_count_by_status()
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        raise RuntimeError(str(e)) from e
 
-    mgr = _get_device_manager()
-    devices = mgr.get_all_status()
-
-    # 聚合会话状态（取最大轮次）
     max_round = 0
     total_friends_this_round = 0
     for d in devices:
@@ -450,6 +536,43 @@ async def api_stats():
         "friends_this_round": total_friends_this_round,
         "device_count": len(devices),
     }
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """设备 + 统计 + 账号检测 + 在线 Agent 一次返回。"""
+    try:
+        mgr = _get_device_manager()
+        devices = mgr.get_all_status()
+        stats = _build_stats_payload(devices)
+        account_check = mgr.get_account_check_status()
+        agents: List[Dict[str, Any]] = []
+        try:
+            agents = get_router().snapshot()
+        except Exception:
+            logger.debug("读取 agent 快照失败", exc_info=True)
+        return {
+            "devices": devices,
+            "stats": stats,
+            "account_check": account_check,
+            "agents": agents,
+        }
+    except Exception as e:
+        logger.exception("dashboard API 失败")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# 统计 API
+# ---------------------------------------------------------------------------
+@app.get("/api/stats")
+async def api_stats():
+    """返回好友统计 + 会话状态快照（聚合所有 per-device 文件）。"""
+    try:
+        mgr = _get_device_manager()
+        return _build_stats_payload(mgr.get_all_status())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
@@ -481,11 +604,15 @@ async def api_set_config(data: dict = None):
     if not isinstance(data, dict):
         data = {}
     try:
-        new_cfg = data.get("config") or data
-        _save_settings(new_cfg)
+        from utils.config_merge import deep_merge
+
+        patch = data.get("config") or data
+        merged = deep_merge(_load_settings(), patch)
+        _save_settings(merged)
         mgr = _get_device_manager()
-        mgr.reload_config(new_cfg, _load_elements())
-        return {"ok": True}
+        mgr.reload_config(merged, _load_elements())
+        load_security_config(merged)
+        return {"ok": True, "config": merged}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 

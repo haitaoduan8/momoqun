@@ -1,7 +1,7 @@
 """momoqun — 陌陌群聊邀请自动化。
 
 单机模式：直连一台设备，跑完整流水线。
-多机模式：用 server.py + worker.py（推荐）。
+多机模式：用 server.py 启动 Web 控制台（推荐）。
 
 用法：
     python3 main.py                          # 自动检测设备

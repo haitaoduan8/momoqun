@@ -3,7 +3,16 @@
  * 连接后端 FastAPI 服务器 (http://localhost:5100)
  */
 
+import { authHeaders } from "./auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+export class ApiAuthError extends Error {
+  constructor(message = "未授权") {
+    super(message);
+    this.name = "ApiAuthError";
+  }
+}
 
 // 通用请求方法
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -12,14 +21,36 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...options?.headers,
     },
   });
+
+  if (response.status === 401) {
+    throw new ApiAuthError();
+  }
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status} ${response.statusText}`);
   }
 
+  return response.json();
+}
+
+// ============ 鉴权 ============
+
+export interface AuthStatus {
+  auth_required: boolean;
+  shell_exec_allowed: boolean;
+  heartbeat_timeout_sec: number;
+}
+
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const url = `${API_BASE}/api/auth/status`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
   return response.json();
 }
 
@@ -29,6 +60,8 @@ export interface MasterAddress {
   addresses: string[];
   port: number;
   ws_urls: string[];
+  auth_required?: boolean;
+  api_token?: string;
 }
 
 export async function getMasterAddress(): Promise<MasterAddress> {
@@ -53,10 +86,12 @@ export async function getAgents(): Promise<{ agents: OnlineAgent[] }> {
 export interface Device {
   serial: string;
   name: string;
-  state: "running" | "paused" | "stopped" | "error";
+  state: "running" | "paused" | "stopped" | "error" | "waiting_agent";
   round_number?: number;
   friends_total?: number;
   friends_this_round?: number;
+  error?: string | null;
+  current_phase?: string;
 }
 
 export async function getDevices(): Promise<Device[]> {
@@ -101,6 +136,19 @@ export async function getStats(): Promise<Stats> {
   return fetchAPI("/api/stats");
 }
 
+// ============ 聚合 Dashboard（设备 + 统计 + 账号检测 + Agent） ============
+
+export interface DashboardResponse {
+  devices: Device[];
+  stats: Stats;
+  account_check: AccountCheckStatus;
+  agents: OnlineAgent[];
+}
+
+export async function getDashboard(): Promise<DashboardResponse> {
+  return fetchAPI("/api/dashboard");
+}
+
 // ============ 运行日志 ============
 
 export interface LogEntry {
@@ -130,7 +178,13 @@ export interface Config {
   direct_group_mode: boolean;
   reply_interval: { min: number; max: number };
   chat_strategy: string;
+  chat_ignore_names?: string[];
   message_pools: Array<{ id: number; messages: string[] }>;
+  security?: {
+    api_token?: string;
+    allow_shell_exec?: boolean;
+    heartbeat_timeout_sec?: number;
+  };
 }
 
 export async function getConfig(): Promise<Config> {

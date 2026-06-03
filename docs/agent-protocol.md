@@ -8,6 +8,7 @@
 - **协议**：WebSocket，文本帧，UTF-8 JSON。
 - **方向**：agent 主动连 master，连接稳定后保持开放。
 - **端点**：`ws://<master_host>:<port>/agent/{serial}`
+  - 可选鉴权：`ws://<host>:<port>/agent/{serial}?token=<api_token>`（与 `security.api_token` 一致）
   - `serial`：模拟器序列号，URL-safe（如 `127.0.0.1_5555`）。
   - 同一 serial 重复连接：旧连接被 master 关闭。
 - **心跳**：agent 每 10s 发 `{"event": "heartbeat"}`；master 30s 未收到任何帧则关连接。

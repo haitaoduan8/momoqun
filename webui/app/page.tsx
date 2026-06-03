@@ -1,11 +1,13 @@
 'use client';
 
+import { AuthGate } from "@/components/AuthGate";
 import { SplineRobot } from "@/components/SplineRobot";
 import { Dashboard } from "@/components/Dashboard";
 import { LogArea } from "@/components/LogArea";
 import { MasterAddressPanel } from "@/components/MasterAddressPanel";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { AccountCheckPanel } from "@/components/AccountCheckPanel";
+import { useDashboard } from "@/lib/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Smartphone,
@@ -176,6 +178,8 @@ function Sidebar({
 
 // 设备管理页面
 function DevicesPage() {
+  const { devices, stats, accountCheck, agents, loading, refresh } = useDashboard();
+
   return (
     <>
       {/* 3D 机器人 + 日志区域 */}
@@ -193,12 +197,18 @@ function DevicesPage() {
 
       {/* Master 地址 + 在线 Agent（路线 C） */}
       <section>
-        <MasterAddressPanel />
+        <MasterAddressPanel agents={agents} onRefreshAgents={refresh} />
       </section>
 
       {/* 控制面板 */}
       <section>
-        <Dashboard />
+        <Dashboard
+          devices={devices}
+          stats={stats}
+          accountCheck={accountCheck}
+          loading={loading}
+          refresh={refresh}
+        />
       </section>
     </>
   );
@@ -239,6 +249,7 @@ export default function Home() {
   };
 
   return (
+    <AuthGate>
     <div className="flex h-screen bg-black overflow-hidden">
       {/* 侧边栏 */}
       <Sidebar
@@ -280,5 +291,6 @@ export default function Home() {
         </div>
       </main>
     </div>
+    </AuthGate>
   );
 }

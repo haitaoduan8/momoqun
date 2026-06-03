@@ -98,6 +98,22 @@ class SessionRound:
 
         self._logger = logging.getLogger("session")
 
+    def apply_config(self, settings: dict, elements: dict) -> None:
+        """热更新配置：同步到子模块与消息池。"""
+        self.settings = settings or {}
+        self.elements = elements or {}
+        self.N = max(1, int(self.settings.get("chat_rounds_before_follow", 3)))
+        self.S = max(1, int(self.settings.get("max_chat_rounds", 10)))
+        self.round_end_wait = float(self.settings.get("round_end_wait_s", 10))
+        for comp in (self.greeter, self.chatter, self.inviter, self.chat_flow):
+            comp.settings = self.settings
+            comp.elements = self.elements
+        if self._pool is not None:
+            try:
+                self._pool.reload_from_config(self.settings)
+            except Exception:
+                self._logger.exception("消息池热更新失败")
+
     # ------------------------------------------------------------------
     # 主入口
     # ------------------------------------------------------------------

@@ -1,4 +1,11 @@
 config:
+  security:
+    # 非空即启用 HTTP API 与 Agent WebSocket 鉴权（也可用环境变量 MOMOQUN_API_TOKEN）
+    api_token: ""
+    # Agent 反向 RPC shell_exec：默认关闭，避免局域网内远程执行 adb shell
+    allow_shell_exec: false
+    # Master 侧无心跳断开阈值（秒），与 docs/agent-protocol.md 一致
+    heartbeat_timeout_sec: 30
   account_check:
     detect_timeout_sec: 8.0
     enabled: false

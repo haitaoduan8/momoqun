@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from agent_router import get_router as _get_agent_router
+from agent_router import NoAgentError, get_router as _get_agent_router
 from core.drivers.agent_driver import AgentHandler  # 路线 C — APK Agent（唯一通路）
 from core.pipeline import SessionRound
 from data.storage import StorageHandler
@@ -167,11 +167,54 @@ class DeviceThread:
         self.settings = settings
         self.elements = elements
         if self.session_round:
-            self.session_round.settings = settings
-            self.session_round.elements = elements
-            self.session_round.N = max(1, int(settings.get("chat_rounds_before_follow", 3)))
-            self.session_round.S = max(1, int(settings.get("max_chat_rounds", 10)))
-            self.session_round.round_end_wait = float(settings.get("round_end_wait_s", 10))
+            self.session_round.apply_config(settings, elements)
+
+    # ------------------------ Agent 连接 ------------------------
+
+    def _agent_is_online(self) -> bool:
+        try:
+            return _get_agent_router().get(self.serial) is not None
+        except Exception:
+            return False
+
+    def _wait_for_agent(
+        self,
+        logger: logging.Logger,
+        *,
+        initial: bool = False,
+    ) -> bool:
+        """等待 Agent 上线。返回 False 表示收到停止信号。"""
+        backoff = 1.0
+        while self._running and not self._stop_evt.is_set():
+            if self._agent_is_online():
+                with self._lock:
+                    if self._error and "Agent" in (self._error or ""):
+                        self._error = None
+                    self._current_phase = "idle"
+                if self._on_status:
+                    try:
+                        self._on_status(self.snapshot())
+                    except Exception:
+                        pass
+                if not initial:
+                    logger.info("设备 %s: Agent 已重连", self.serial)
+                return True
+
+            with self._lock:
+                self._error = "等待 Agent 连接…"
+                self._current_phase = "waiting_agent"
+            if self._on_status:
+                try:
+                    self._on_status(self.snapshot())
+                except Exception:
+                    pass
+
+            msg = "启动前等待 Agent" if initial else "等待 Agent 重连"
+            logger.info("设备 %s: %s (%.0fs 后重试)", self.serial, msg, backoff)
+            if self._stop_evt.wait(timeout=backoff):
+                return False
+            backoff = min(backoff * 1.5, 30.0)
+        return False
 
     # ------------------------ 内部 ------------------------
 
@@ -215,18 +258,17 @@ class DeviceThread:
         logger = logging.getLogger(f"device.{self.serial}")
         logger.info("设备线程启动: %s", self.name)
 
-        # ---------- 驱动选择（仅 Agent） ----------
-        agent_conn = None
-        try:
-            agent_conn = _get_agent_router().get(self.serial)
-        except Exception:
-            logger.debug("agent_router 查询失败 (忽略)", exc_info=True)
+        # ---------- 驱动选择（仅 Agent，支持启动前 / 运行中等待重连） ----------
+        if not self._wait_for_agent(logger, initial=True):
+            logger.info("设备 %s: 停止信号，未等到 Agent", self.serial)
+            with self._lock:
+                self._state = "stopped"
+            return
 
         try:
+            agent_conn = _get_agent_router().get(self.serial)
             if agent_conn is None:
-                raise RuntimeError(
-                    f"设备 {self.serial} 无在线 Agent 连接，请先在模拟器中启动 Agent"
-                )
+                raise RuntimeError(f"设备 {self.serial} Agent 连接不可用")
             logger.info("设备 %s 使用 APK Agent (路线 C)", self.serial)
             self.driver = AgentHandler(
                 "config/settings.yaml", serial=agent_conn.serial
@@ -287,11 +329,23 @@ class DeviceThread:
                     if self._stop_evt.is_set():
                         break
 
+                if not self._agent_is_online():
+                    logger.warning("设备 %s: Agent 离线，进入等待", self.serial)
+                    if not self._wait_for_agent(logger):
+                        break
+                    continue
+
                 try:
                     # 执行一整轮（内部已包含 Phase 4 等待）
                     self.session_round.execute_one_round()
                     consecutive_errors = 0
                     self._update_snapshot()
+
+                except NoAgentError:
+                    logger.warning("设备 %s: Agent RPC 断开，等待重连", self.serial)
+                    if not self._wait_for_agent(logger):
+                        break
+                    continue
 
                 except Exception:
                     logger.exception("设备 %s 轮次异常", self.serial)

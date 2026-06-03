@@ -6,10 +6,13 @@ import {
   getStats,
   getAccountCheckStatus,
   getConfig,
+  getDashboard,
   type Device,
   type Stats,
   type AccountCheckStatus,
   type Config,
+  type DashboardResponse,
+  type OnlineAgent,
 } from "./api";
 
 // ============ 设备轮询 Hook ============
@@ -114,4 +117,41 @@ export function useConfig() {
   }, [fetchConfig]);
 
   return { config, loading, refresh: fetchConfig };
+}
+
+// ============ Dashboard 聚合 Hook（单次轮询替代 devices/stats/account-check） ============
+
+export function useDashboard(interval = 4000) {
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const payload = await getDashboard();
+      setData(payload);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "获取 Dashboard 失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, interval);
+    return () => clearInterval(timer);
+  }, [refresh, interval]);
+
+  return {
+    data,
+    devices: data?.devices ?? [],
+    stats: data?.stats ?? null,
+    accountCheck: data?.account_check ?? null,
+    agents: data?.agents ?? ([] as OnlineAgent[]),
+    loading,
+    error,
+    refresh,
+  };
 }
