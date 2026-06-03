@@ -28,8 +28,8 @@ object DumpHierarchyHandler {
         val apk = resolveApkPath()
             ?: throw RpcError(-32603, "hierarchy dump failed: pm path $PKG empty (root/su?)")
 
-        val cmd = "pkill -f uiautomator 2>/dev/null; " +
-            "CLASSPATH=$apk app_process /system/bin $DUMPER_MAIN"
+        val apkQ = apk.replace("'", "'\\''")
+        val cmd = "CLASSPATH='$apkQ' app_process /system/bin $DUMPER_MAIN"
         val result = ShellHelper.exec(cmd, timeoutSec = 20)
         if (result.ok && result.output.contains("<hierarchy")) {
             Log.d(TAG, "local root dump OK (${result.output.length} chars)")
