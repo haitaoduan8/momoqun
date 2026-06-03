@@ -2,6 +2,7 @@ package com.momoqun.agent.util
 
 import android.util.Log
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
@@ -14,14 +15,47 @@ import java.util.concurrent.TimeUnit
 object ShellHelper {
     private const val TAG = "MQAgent.Shell"
 
+    /** App 进程 PATH 常不含 su；adb shell 多为 /system/bin/su 或 /sbin/su。 */
+    private val SU_CANDIDATES = listOf(
+        "/system/bin/su",
+        "/sbin/su",
+        "/system/xbin/su",
+        "/system/sbin/su",
+        "su",
+        "/data/adb/magisk/magisk",
+    )
+
+    @Volatile
+    private var cachedSuPath: String? = null
+
     data class Result(val code: Int, val output: String, val stderr: String = "") {
         val ok: Boolean get() = code == 0
     }
 
     fun exec(cmd: String, timeoutSec: Long = 10): Result {
-        Log.d(TAG, "exec: su -c ${cmd.take(200)}")
+        val suPaths = buildList {
+            cachedSuPath?.let { add(it) }
+            addAll(SU_CANDIDATES)
+        }.distinct()
+        var last: Result = Result(-1, "", "no su binary found")
+        for (su in suPaths) {
+            if (su != "su" && !File(su).exists()) continue
+            Log.d(TAG, "exec: $su -c ${cmd.take(200)}")
+            val r = execWithSu(su, cmd, timeoutSec)
+            if (r.stderr.contains("No such file or directory") && r.code == -1 && r.output.isEmpty()) {
+                last = r
+                continue
+            }
+            cachedSuPath = su
+            return r
+        }
+        Log.w(TAG, "all su paths failed for: ${cmd.take(80)}")
+        return last
+    }
+
+    private fun execWithSu(su: String, cmd: String, timeoutSec: Long): Result {
         return try {
-            val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+            val proc = Runtime.getRuntime().exec(arrayOf(su, "-c", cmd))
             val stdout = BufferedReader(InputStreamReader(proc.inputStream)).use { it.readText() }
             val stderr = BufferedReader(InputStreamReader(proc.errorStream)).use { it.readText() }
             val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
@@ -37,7 +71,7 @@ object ShellHelper {
                 Result(code, stdout.trim(), stderr.trim())
             }
         } catch (e: Exception) {
-            Log.w(TAG, "exec exception: ${cmd.take(80)}", e)
+            Log.w(TAG, "exec exception ($su): ${cmd.take(80)}", e)
             Result(-1, "", e.message ?: "exception")
         }
     }
