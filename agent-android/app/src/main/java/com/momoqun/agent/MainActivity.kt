@@ -37,9 +37,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnStart.setOnClickListener { startAgent() }
         binding.btnStop.setOnClickListener { stopAgent() }
-        binding.btnOpenA11y.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
         binding.btnOpenIme.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }

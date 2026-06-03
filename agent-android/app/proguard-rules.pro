@@ -1,5 +1,4 @@
-# Keep accessibility/IME service classes referenced from AndroidManifest only
--keep class com.momoqun.agent.service.A11yService { *; }
+# Keep IME / foreground service classes referenced from AndroidManifest only
 -keep class com.momoqun.agent.service.MomoQunIME { *; }
 -keep class com.momoqun.agent.service.AgentForegroundService { *; }
 -keep class com.momoqun.agent.service.BootReceiver { *; }

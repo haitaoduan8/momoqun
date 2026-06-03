@@ -9,18 +9,17 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.momoqun.agent.util.HierarchyXml
 
 /**
- * 独立 dumper 入口,**不在 APK 进程内运行**:由 master 通过
+ * 独立 dumper 入口,**不在 APK 主进程内运行**:由 Agent 经本地 `su -c` 启动:
  *   `CLASSPATH=<已安装的 base.apk> app_process /system/bin com.momoqun.agent.dumper.Main`
- * 以 **shell 用户(uid 2000)** 身份启动。
+ * 以 **shell/root** 身份运行,XML 经 stdout 返回后由 WebSocket 传给 master。
  *
- * 目的:在「不开启无障碍」的前提下拿到 UI 树,且避开平台 `uiautomator dump`
- * 在深层 UI 树上递归序列化导致的栈溢出崩溃。
+ * 目的:在「不开启无障碍、不依赖 master adb」的前提下拿到 UI 树,
+ * 且避开平台 `uiautomator dump` 在深层 UI 树上递归序列化导致的栈溢出崩溃。
  *
  * 取树通道与 `uiautomator dump` 相同(shell 侧 `UiAutomation`),
- * 但序列化改用 [HierarchyXml] 的显式栈迭代实现,从根上消除崩溃。
+ * 序列化改用 [HierarchyXml] 的显式栈迭代实现。
  *
- * 约定:成功时把 XML 打到 **stdout** 并以退出码 0 结束;失败时退出码非 0、
- * 诊断信息走 stderr,master 据此回退到 `uiautomator dump --compressed`。
+ * 约定:成功时把 XML 打到 stdout 并以退出码 0 结束;失败时退出码非 0、诊断走 stderr。
  */
 object Main {
 
