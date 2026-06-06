@@ -411,7 +411,8 @@ async def api_devices_action(action: str, data: dict = None):
     mgr = _get_device_manager()
 
     if action == "start_all":
-        mgr.start_all()
+        started = mgr.start_all_online()
+        return {"ok": True, "started": started}
     elif action == "stop_all":
         mgr.stop_all()
     elif action == "pause_all":

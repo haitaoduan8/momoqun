@@ -492,6 +492,22 @@ class AgentHandler:
             random.uniform(self.settings["delay"]["min"], self.settings["delay"]["max"])
         )
 
+    def swipe_half_screen_up(self, duration: float = 0.35) -> None:
+        """手指上滑约半屏，用于露出底部被遮挡的控件（如群信息页邀请 + 号）。"""
+        try:
+            w, h = self.d.window_size()
+            x = int(w * 0.5) + random.randint(
+                -self.settings["click_offset"]["x"], self.settings["click_offset"]["x"]
+            )
+            y1 = int(h * 0.75)
+            y2 = int(h * 0.25)
+            self.d.swipe(x, y1, x, y2, duration)
+            time.sleep(
+                random.uniform(self.settings["delay"]["min"], self.settings["delay"]["max"])
+            )
+        except Exception:
+            logging.exception("AgentHandler.swipe_half_screen_up 异常")
+
     def wait_ui_stable(self, max_wait: float = 1.2, poll: float = 0.12) -> bool:
         # 连续两次 dump_hierarchy 的 hash 一致即视为稳定。
         import hashlib

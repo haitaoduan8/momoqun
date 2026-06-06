@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Wifi,
   Play,
+  Pause,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -35,6 +36,9 @@ export function MasterAddressPanel({
   const [masterErr, setMasterErr] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  const [bulkAction, setBulkAction] = useState<"start_all" | "pause_all" | null>(
+    null
+  );
 
   // master 地址：拿一次即可（IP/端口运行期不变）
   useEffect(() => {
@@ -79,10 +83,23 @@ export function MasterAddressPanel({
       await addDevice(serial, serial).catch(() => {});
       // 启动脚本
       await deviceAction("start", serial);
+      await onRefreshAgents?.();
     } catch (e) {
       console.error("启动失败:", e);
     } finally {
       setStarting(null);
+    }
+  };
+
+  const handleBulkAction = async (action: "start_all" | "pause_all") => {
+    setBulkAction(action);
+    try {
+      await deviceAction(action);
+      await onRefreshAgents?.();
+    } catch (e) {
+      console.error("批量操作失败:", e);
+    } finally {
+      setBulkAction(null);
     }
   };
 
@@ -179,20 +196,48 @@ export function MasterAddressPanel({
 
         {/* ---- B. 在线 Agent 状态 ---- */}
         <div className="pt-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <Wifi className="w-4 h-4 text-accent" />
             <span className="text-sm font-medium text-white">在线 Agent</span>
             <span className="text-sm text-muted-foreground">
               ({agents.length} 台)
             </span>
-            <button
-              onClick={() => onRefreshAgents?.()}
-              title="刷新在线 Agent"
-              disabled={!onRefreshAgents}
-              className="ml-auto text-muted-foreground hover:text-white transition-colors disabled:opacity-40"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => handleBulkAction("start_all")}
+                disabled={agents.length === 0 || bulkAction !== null}
+                title="为所有在线 Agent 添加设备并启动"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neon-green/10 text-neon-green rounded-lg hover:bg-neon-green/20 transition-colors disabled:opacity-40"
+              >
+                {bulkAction === "start_all" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                全部启动
+              </button>
+              <button
+                onClick={() => handleBulkAction("pause_all")}
+                disabled={bulkAction !== null}
+                title="暂停所有已注册设备"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neon-yellow/10 text-neon-yellow rounded-lg hover:bg-neon-yellow/20 transition-colors disabled:opacity-40"
+              >
+                {bulkAction === "pause_all" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Pause className="w-3.5 h-3.5" />
+                )}
+                全部暂停
+              </button>
+              <button
+                onClick={() => onRefreshAgents?.()}
+                title="刷新在线 Agent"
+                disabled={!onRefreshAgents || bulkAction !== null}
+                className="text-muted-foreground hover:text-white transition-colors disabled:opacity-40 p-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {agents.length === 0 ? (

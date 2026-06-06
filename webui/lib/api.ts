@@ -48,10 +48,22 @@ export interface AuthStatus {
 export async function getAuthStatus(): Promise<AuthStatus> {
   const url = `${API_BASE}/api/auth/status`;
   const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status}`);
+  if (response.ok) {
+    return response.json();
   }
-  return response.json();
+  // 旧版 server 无此路由：从 master-address 读取鉴权状态，或视为未启用
+  if (response.status === 404) {
+    const fallback = await fetch(`${API_BASE}/api/master-address`);
+    if (fallback.ok) {
+      const data = await fallback.json();
+      return {
+        auth_required: Boolean(data.auth_required),
+        shell_exec_allowed: Boolean(data.shell_exec_allowed),
+        heartbeat_timeout_sec: Number(data.heartbeat_timeout_sec) || 30,
+      };
+    }
+  }
+  throw new Error(`API Error: ${response.status}`);
 }
 
 // ============ Master 地址（路线 C：下发给模拟器 Agent） ============
@@ -113,12 +125,12 @@ export async function removeDevice(serial: string): Promise<{ ok: boolean; error
 }
 
 export async function deviceAction(
-  action: "start" | "stop" | "pause" | "resume",
-  serial: string
-): Promise<{ ok: boolean; error?: string }> {
+  action: "start" | "stop" | "pause" | "resume" | "start_all" | "pause_all",
+  serial?: string
+): Promise<{ ok: boolean; error?: string; started?: number }> {
   return fetchAPI(`/api/devices/${action}`, {
     method: "POST",
-    body: JSON.stringify({ serial }),
+    body: JSON.stringify(serial ? { serial } : {}),
   });
 }
 

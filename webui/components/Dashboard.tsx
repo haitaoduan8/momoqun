@@ -193,6 +193,10 @@ export function Dashboard({
   loading: devicesLoading,
   refresh,
 }: DashboardViewProps) {
+  const [bulkAction, setBulkAction] = useState<"start_all" | "pause_all" | null>(
+    null
+  );
+
   const handleStart = async (serial: string) => {
     await deviceAction("start", serial);
     await refresh();
@@ -216,6 +220,16 @@ export function Dashboard({
   const handleDismiss = async (serial: string) => {
     await dismissAccountCheck(serial);
     await refresh();
+  };
+
+  const handleBulkAction = async (action: "start_all" | "pause_all") => {
+    setBulkAction(action);
+    try {
+      await deviceAction(action);
+      await refresh();
+    } finally {
+      setBulkAction(null);
+    }
   };
 
   const totalDevices = devices.length;
@@ -252,13 +266,41 @@ export function Dashboard({
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-          <Settings className="w-5 h-5 text-accent" />
-          设备管理
-          <span className="text-sm font-normal text-muted-foreground ml-2">
-            ({totalDevices} 台)
-          </span>
-        </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+            <Settings className="w-5 h-5 text-accent" />
+            设备管理
+            <span className="text-sm font-normal text-muted-foreground ml-2">
+              ({totalDevices} 台)
+            </span>
+          </h2>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => handleBulkAction("start_all")}
+              disabled={bulkAction !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neon-green/10 text-neon-green rounded-lg hover:bg-neon-green/20 transition-colors disabled:opacity-40"
+            >
+              {bulkAction === "start_all" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5" />
+              )}
+              全部启动
+            </button>
+            <button
+              onClick={() => handleBulkAction("pause_all")}
+              disabled={bulkAction !== null || totalDevices === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neon-yellow/10 text-neon-yellow rounded-lg hover:bg-neon-yellow/20 transition-colors disabled:opacity-40"
+            >
+              {bulkAction === "pause_all" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Pause className="w-3.5 h-3.5" />
+              )}
+              全部暂停
+            </button>
+          </div>
+        </div>
 
         {devicesLoading ? (
           <div className="flex items-center justify-center py-12">

@@ -33,7 +33,7 @@ cd webui && npm install && npm run build && cd ..
 python server.py
 ```
 
-浏览器打开控制台（默认 `http://127.0.0.1:8765`）。
+浏览器打开控制台（默认 `http://127.0.0.1:5100`）。
 
 ### 3. 配置 Agent
 

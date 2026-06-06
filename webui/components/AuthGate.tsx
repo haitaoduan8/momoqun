@@ -43,7 +43,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
       setPhase("ready");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "无法连接后端");
+      const msg = e instanceof Error ? e.message : "无法连接后端";
+      if (msg.includes("404")) {
+        setError("后端版本过旧，请重启 server.py 后刷新页面（Ctrl+C 停止再 python3 server.py）");
+      } else {
+        setError(msg);
+      }
       setPhase("login");
     }
   }, []);

@@ -465,9 +465,33 @@ class DeviceManager:
     # ------------------------ 控制接口 ------------------------
 
     def start_all(self) -> None:
-        """启动所有设备。"""
+        """启动所有已注册设备（不自动添加在线 Agent）。"""
         for dt in self._threads.values():
             dt.start()
+
+    def start_all_online(self) -> int:
+        """为每个 WebSocket 在线 Agent 自动 add_device 并 start。返回本次新启动数量。"""
+        log = logging.getLogger("device_manager")
+        try:
+            serials = _get_agent_router().list_serials()
+        except Exception:
+            log.exception("列举在线 Agent 失败")
+            return 0
+
+        started = 0
+        for serial in serials:
+            try:
+                self.add_device(serial, serial)
+                dt = self._threads.get(serial)
+                if dt and dt.state == "paused":
+                    dt.resume()
+                    started += 1
+                elif self.start_device(serial):
+                    started += 1
+            except Exception:
+                log.exception("启动在线 Agent 失败: %s", serial)
+        log.info("全部启动（在线 Agent）: %d 台在线, %d 台新启动", len(serials), started)
+        return started
 
     def stop_all(self) -> None:
         """停止所有设备。"""

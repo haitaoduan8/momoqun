@@ -355,8 +355,16 @@ class GroupInviter:
         self._logger.info("open_invite_panel: 查找邀请按钮...")
 
         try:
+            self._logger.info("open_invite_panel: 半屏上滑以露出邀请按钮")
+            self.driver.swipe_half_screen_up(
+                duration=random.uniform(0.3, 0.4)
+            )
+            random_delay(self.settings)
+            time.sleep(random.uniform(0.4, 0.8))
+
             xml = self.driver.d.dump_hierarchy()
             root = ET.fromstring(xml)
+            screen_w, screen_h = self.driver.d.window_size()
 
             # 策略：找 text="邀请好友" 的节点，再找它上方的可点击 ImageView
             invite_text_node = None
@@ -406,8 +414,8 @@ class GroupInviter:
                 cls = node.attrib.get("class", "")
                 if "Image" not in cls:
                     continue
-                # 应该在 y=1800~2200 范围内
-                if 1800 < b[1] < 2200 and b[0] < 250:
+                # 应在屏幕左下区域（邀请 + 号通常在底部左侧）
+                if b[1] > screen_h * 0.85 and b[0] < screen_w * 0.25:
                     cx = (b[0] + b[2]) // 2
                     cy = (b[1] + b[3]) // 2
                     self._logger.info("fallback: 点击可点击 ImageView (%d,%d)", cx, cy)
