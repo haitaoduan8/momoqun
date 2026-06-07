@@ -204,21 +204,23 @@ def go_back_to_chat_list(
     *,
     max_backs: int = 5,
     logger: Optional[logging.Logger] = None,
+    serial: Optional[str] = None,
 ) -> bool:
     """从子页面按 back 返回主聊天列表；已在列表时不按 back，避免退出陌陌。
 
-    验证策略：chat_row 存在，且无 accept_button / send_button / input_box。
-    失败时尝试点击底部「消息」tab，不再追加 blind back。
+    dump 失败时不按 back，原地重试；仍失败抛 DumpRecoveryFailed。
+    仅 dump 成功且确认不在列表时才按 back。
     """
+    from actions.ui_hierarchy import dump_hierarchy_with_retry
+
     log = logger or logging.getLogger("navigator")
 
-    try:
-        xml = driver.d.dump_hierarchy()
-        if is_on_main_chat_list(xml, elements):
-            log.debug("已在主聊天列表，跳过 back")
-            return True
-    except Exception:
-        log.debug("首轮页面检测异常", exc_info=True)
+    xml = dump_hierarchy_with_retry(
+        driver, serial=serial, logger=log,
+    )
+    if is_on_main_chat_list(xml, elements):
+        log.debug("已在主聊天列表，跳过 back")
+        return True
 
     for i in range(max_backs):
         try:
@@ -230,21 +232,19 @@ def go_back_to_chat_list(
             driver.wait_ui_stable(max_wait=1.0)
         except Exception:
             pass
-        try:
-            xml = driver.d.dump_hierarchy()
-            if is_on_main_chat_list(xml, elements):
-                log.info("已回到聊天列表 (第 %d 次 back)", i + 1)
-                return True
-        except Exception:
-            log.debug("dump hierarchy 检测异常", exc_info=True)
+        xml = dump_hierarchy_with_retry(
+            driver, serial=serial, logger=log,
+        )
+        if is_on_main_chat_list(xml, elements):
+            log.info("已回到聊天列表 (第 %d 次 back)", i + 1)
+            return True
 
     log.warning("%d 次 back 后仍未回到聊天列表，尝试 open 消息 tab", max_backs)
     if try_open_chat_tab(driver, elements, log):
-        try:
-            xml = driver.d.dump_hierarchy()
-            if is_on_main_chat_list(xml, elements):
-                log.info("open 消息 tab 后已回到主聊天列表")
-                return True
-        except Exception:
-            log.debug("open tab 后页面检测异常", exc_info=True)
+        xml = dump_hierarchy_with_retry(
+            driver, serial=serial, logger=log,
+        )
+        if is_on_main_chat_list(xml, elements):
+            log.info("open 消息 tab 后已回到主聊天列表")
+            return True
     return False

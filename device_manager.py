@@ -11,6 +11,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from actions.ui_hierarchy import DumpRecoveryFailed
 from agent_router import NoAgentError, get_router as _get_agent_router
 from core.drivers.agent_driver import AgentHandler  # 路线 C — APK Agent（唯一通路）
 from core.pipeline import SessionRound
@@ -73,11 +74,17 @@ class DeviceThread:
         self._last_check_at: float = 0.0
         self._account_message: str = ""
         self._paused_by_account_check: bool = False
+        # dump 失败等自动暂停时保留，直到 resume 清除
+        self._sticky_error: Optional[str] = None
 
     @property
     def state(self) -> str:
         with self._lock:
             return self._state
+
+    @property
+    def thread_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
 
     def snapshot(self) -> Dict[str, Any]:
         """线程安全的设备状态快照。"""
@@ -154,11 +161,18 @@ class DeviceThread:
         self._pause_evt.set()  # 取消暂停，让线程退出
         self._set_state("stopped")
 
-    def pause(self) -> None:
+    def pause(self, reason: Optional[str] = None) -> None:
+        if reason:
+            with self._lock:
+                self._sticky_error = reason
+                self._error = reason
         self._pause_evt.clear()
         self._set_state("paused")
 
     def resume(self) -> None:
+        with self._lock:
+            self._sticky_error = None
+            self._error = None
         self._pause_evt.set()
         self._set_state("running")
 
@@ -241,7 +255,10 @@ class DeviceThread:
                     self._friends_total = str(counts.get("total", 0))
                 except Exception:
                     pass
-            self._error = None
+            if self._sticky_error is None:
+                self._error = None
+            else:
+                self._error = self._sticky_error
         if self._on_status:
             try:
                 self._on_status(self.snapshot())
@@ -340,6 +357,13 @@ class DeviceThread:
                     self.session_round.execute_one_round()
                     consecutive_errors = 0
                     self._update_snapshot()
+
+                except DumpRecoveryFailed as dump_exc:
+                    reason = str(dump_exc)
+                    logger.error("设备 %s: %s", self.serial, reason)
+                    self.pause(reason=reason)
+                    consecutive_errors = 0
+                    continue
 
                 except NoAgentError:
                     logger.warning("设备 %s: Agent RPC 断开，等待重连", self.serial)
@@ -483,7 +507,11 @@ class DeviceManager:
             try:
                 self.add_device(serial, serial)
                 dt = self._threads.get(serial)
-                if dt and dt.state == "paused":
+                if dt is None:
+                    continue
+                if dt.state == "running":
+                    continue
+                if dt.state == "paused" and dt.thread_alive:
                     dt.resume()
                     started += 1
                 elif self.start_device(serial):
@@ -500,11 +528,17 @@ class DeviceManager:
 
     def pause_all(self) -> None:
         for dt in self._threads.values():
-            dt.pause()
+            if dt.state == "running":
+                dt.pause()
 
     def resume_all(self) -> None:
         for dt in self._threads.values():
-            dt.resume()
+            if dt.state != "paused":
+                continue
+            if dt.thread_alive:
+                dt.resume()
+            else:
+                dt.start()
 
     def add_device(self, serial: str, name: Optional[str] = None) -> Optional["DeviceThread"]:
         """新增一台设备（线程安全）。已存在返回 None。"""
@@ -549,8 +583,12 @@ class DeviceManager:
 
     def resume_device(self, serial: str) -> None:
         dt = self._threads.get(serial)
-        if dt:
+        if not dt:
+            return
+        if dt.thread_alive:
             dt.resume()
+        else:
+            dt.start()
 
     def reload_config(self, settings: dict, elements: dict) -> None:
         """热更新所有设备配置。"""

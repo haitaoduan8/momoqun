@@ -323,6 +323,11 @@ export function Dashboard({
                 device.current_phase === "waiting_agent" ||
                 (device.error || "").includes("Agent");
               const displayStatus = waiting ? "waiting_agent" : device.state;
+              const statusHint = waiting
+                ? device.error || "等待 Agent 连接…"
+                : device.state === "paused" && device.error
+                  ? device.error
+                  : undefined;
               return (
                 <DeviceCard
                   key={device.serial}
@@ -336,7 +341,7 @@ export function Dashboard({
                       | "error"
                       | "waiting_agent"
                   }
-                  statusHint={waiting ? device.error || "等待 Agent 连接…" : undefined}
+                  statusHint={statusHint}
                   rounds={device.round_number || 0}
                   friends={device.friends_total || 0}
                   onStart={() =>

@@ -20,6 +20,7 @@ from core.greeter import GreetingScanner
 from core.group_invite import GroupInviter
 from core.message_pool import MessagePoolManager
 from data.storage import StorageHandler
+from actions.ui_hierarchy import DumpRecoveryFailed
 from utils.helpers import random_delay
 
 
@@ -88,6 +89,7 @@ class SessionRound:
             settings=settings,
             pool=self._pool,
             storage=storage,
+            serial=self.serial,
         )
 
         # 配置参数
@@ -137,17 +139,23 @@ class SessionRound:
 
         try:
             self._step_approve_greetings()
+        except DumpRecoveryFailed:
+            raise
         except Exception:
             self._logger.exception("Step A 异常，继续 Step B")
 
         if not direct_mode:
             try:
                 self._step_scan_and_process()
+            except DumpRecoveryFailed:
+                raise
             except Exception:
                 self._logger.exception("Step B 异常，继续 Phase 3")
 
         try:
             self._phase3_follow_and_mutual()
+        except DumpRecoveryFailed:
+            raise
         except Exception:
             self._logger.exception("Phase 3 异常，继续 Phase 4")
 
@@ -172,6 +180,8 @@ class SessionRound:
 
         try:
             self.chat_flow.ensure_on_chat_list()
+        except DumpRecoveryFailed:
+            raise
         except Exception:
             self._logger.exception("Step A: 归位聊天列表失败")
 
@@ -208,6 +218,8 @@ class SessionRound:
             )
             try:
                 self.chat_flow.ensure_on_chat_list()
+            except DumpRecoveryFailed:
+                raise
             except Exception:
                 self._logger.exception("Step A: ensure_on_chat_list 恢复失败")
 
@@ -306,10 +318,14 @@ class SessionRound:
                 elif status == "followed":
                     self._do_mutual_check(uid, name)
 
+            except DumpRecoveryFailed:
+                raise
             except Exception:
                 self._logger.exception("Phase 3: 处理 %s 失败", uid)
                 try:
                     self.chatter.go_back_to_chat_list()
+                except DumpRecoveryFailed:
+                    raise
                 except Exception:
                     pass
 
@@ -378,6 +394,8 @@ class SessionRound:
             self._logger.info("Phase 3: %s 已完成（邀请+拉黑）", name)
             try:
                 self.chat_flow.ensure_on_chat_list()
+            except DumpRecoveryFailed:
+                raise
             except Exception:
                 self._logger.exception("Phase 3: 互关邀请后归位失败")
         else:
@@ -413,6 +431,8 @@ class SessionRound:
         self._logger.info("Phase 3: %s 已完成（邀请+拉黑）", name)
         try:
             self.chat_flow.ensure_on_chat_list()
+        except DumpRecoveryFailed:
+            raise
         except Exception:
             self._logger.exception("Phase 3: 直接拉群后归位失败")
 

@@ -26,6 +26,7 @@ class GroupInviter:
         self.driver = driver
         self.elements = elements
         self.settings = settings
+        self.serial = serial
         self._ec = ElementsConfig(elements)
         self._logger = logging.getLogger(
             f"group_invite.{serial}" if serial else "group_invite"
@@ -540,7 +541,8 @@ class GroupInviter:
         """从群聊/群信息页一路返回到聊天列表。"""
         from utils.helpers import go_back_to_chat_list as _shared_back
         return _shared_back(
-            self.driver, self.elements, max_backs=5, logger=self._logger,
+            self.driver, self.elements, max_backs=5,
+            logger=self._logger, serial=self.serial,
         )
 
     # ------------------------ 拉黑好友 ------------------------

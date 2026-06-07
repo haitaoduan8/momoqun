@@ -508,14 +508,18 @@ class ChatFlow:
         pool: MessagePoolManager,
         storage: StorageHandler,
         logger: Optional[logging.Logger] = None,
+        serial: Optional[str] = None,
     ) -> None:
         self.driver = driver
         self.elements = elements or {}
         self.settings = settings or {}
         self.pool = pool
         self.storage = storage
+        self.serial = serial or getattr(storage, "serial", None)
         self._ec = ElementsConfig(elements or {})
-        self.log = logger or logging.getLogger(__name__)
+        self.log = logger or logging.getLogger(
+            f"chat_flow.{self.serial}" if self.serial else __name__
+        )
 
     # ------------------------ 内部工具 ------------------------
     def _sleep_reply_interval(self) -> None:
@@ -585,15 +589,15 @@ class ChatFlow:
         return False
 
     def ensure_on_chat_list(self, max_backs: int = 5) -> None:
-        """回到主聊天列表：已在列表不按 back；失败则点「消息」tab。"""
+        """回到主聊天列表：dump 失败不重试 back；确认不在列表时才 back。"""
+        from actions.ui_hierarchy import dump_hierarchy_with_retry
         from utils.helpers import is_on_main_chat_list, try_open_chat_tab
 
-        try:
-            xml = self.driver.d.dump_hierarchy()
-            if is_on_main_chat_list(xml, self.elements):
-                return
-        except Exception:
-            self.log.debug("ensure_on_chat_list 首轮检测异常", exc_info=True)
+        xml = dump_hierarchy_with_retry(
+            self.driver, serial=self.serial, logger=self.log,
+        )
+        if is_on_main_chat_list(xml, self.elements):
+            return
 
         for i in range(max_backs):
             try:
@@ -601,13 +605,12 @@ class ChatFlow:
             except Exception:
                 self.log.exception("press back 失败 step=%d", i)
             self._sleep_delay()
-            try:
-                xml = self.driver.d.dump_hierarchy()
-                if is_on_main_chat_list(xml, self.elements):
-                    self.log.info("第 %d 次 back 后已回聊天列表", i + 1)
-                    return
-            except Exception:
-                self.log.debug("ensure_on_chat_list dump 异常 step=%d", i, exc_info=True)
+            xml = dump_hierarchy_with_retry(
+                self.driver, serial=self.serial, logger=self.log,
+            )
+            if is_on_main_chat_list(xml, self.elements):
+                self.log.info("第 %d 次 back 后已回聊天列表", i + 1)
+                return
 
         self.log.warning("%d 次 back 后仍不在列表，尝试 open 消息 tab", max_backs)
         if not try_open_chat_tab(self.driver, self.elements, self.log):

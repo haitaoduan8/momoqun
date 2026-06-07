@@ -264,5 +264,6 @@ class GreetingScanner:
         """从任意界面按 back 返回到聊天列表。"""
         from utils.helpers import go_back_to_chat_list as _shared_back
         return _shared_back(
-            self.driver, self.elements, max_backs=4, logger=self._logger,
+            self.driver, self.elements, max_backs=4,
+            logger=self._logger, serial=self.serial,
         )
