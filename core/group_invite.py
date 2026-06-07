@@ -16,12 +16,20 @@ from utils.helpers import ElementsConfig, parse_bounds, random_delay
 class GroupInviter:
     """群聊邀请管理器。"""
 
-    def __init__(self, driver: DeviceHandler, elements: dict, settings: dict) -> None:
+    def __init__(
+        self,
+        driver: DeviceHandler,
+        elements: dict,
+        settings: dict,
+        serial: Optional[str] = None,
+    ) -> None:
         self.driver = driver
         self.elements = elements
         self.settings = settings
         self._ec = ElementsConfig(elements)
-        self._logger = logging.getLogger("group_invite")
+        self._logger = logging.getLogger(
+            f"group_invite.{serial}" if serial else "group_invite"
+        )
 
     # ------------------------ 元素配置读取（委托 ElementsConfig）-------------------------
     def _get_rid(self, *path: str):
@@ -196,6 +204,27 @@ class GroupInviter:
             logging.exception("_detect_avatar_circle 异常")
             return None, None
 
+    def _scroll_chat_list_to_top(self) -> None:
+        """找群前将消息列表滚到顶部，避免目标群在列表上方却从中间屏开始翻。"""
+        row_rid = self._get_rid("chat_list", "chat_row")
+        if row_rid:
+            try:
+                self.driver.d(resourceId=row_rid).fling.toBeginning(max_swipes=10)
+                time.sleep(random.uniform(0.3, 0.6))
+                return
+            except Exception:
+                self._logger.debug("列表 fling 回顶失败，改用手势", exc_info=True)
+        try:
+            w, h = self.driver.d.window_size()
+            x = int(w * 0.5)
+            y1 = int(h * 0.32)
+            y2 = int(h * 0.72)
+            for _ in range(3):
+                self.driver.d.swipe(x, y1, x, y2, 0.25)
+                time.sleep(0.25 + random.uniform(0.0, 0.2))
+        except Exception:
+            self._logger.debug("手势回顶失败", exc_info=True)
+
     def enter_group_info_directly(self, group_name: str) -> bool:
         """在聊天列表中直接点群头像进入群信息页（不进群聊）。
 
@@ -205,6 +234,7 @@ class GroupInviter:
         self._logger.info("enter_group_info_directly: 在列表找「%s」的头像", group_name)
 
         try:
+            self._scroll_chat_list_to_top()
             row_rid = self._get_rid("chat_list", "chat_row")
             name_rid = self._get_rid("chat_list", "chat_row_name")
             ignore_names = set(self.settings.get("chat_ignore_names") or [])

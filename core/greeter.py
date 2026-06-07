@@ -12,12 +12,20 @@ from utils.helpers import ElementsConfig, parse_bounds, random_delay
 class GreetingScanner:
     """「收到的招呼」扫描器：读角标、进列表、逐个通过。"""
 
-    def __init__(self, driver: DeviceHandler, elements: dict, settings: dict) -> None:
+    def __init__(
+        self,
+        driver: DeviceHandler,
+        elements: dict,
+        settings: dict,
+        serial: Optional[str] = None,
+    ) -> None:
         self.driver = driver
         self.elements = elements
         self.settings = settings
         self._ec = ElementsConfig(elements)
-        self._logger = logging.getLogger("greeter")
+        self._logger = logging.getLogger(
+            f"greeter.{serial}" if serial else "greeter"
+        )
 
     # ------------------------ 元素配置读取（委托 ElementsConfig）-------------------------
     def _get_rid(self, *path: str) -> Optional[str]:

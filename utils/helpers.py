@@ -158,6 +158,46 @@ def setup_logging(
 # UI 页面导航（消除 greeter / chatter / group_inviter 重复的 go_back_to_chat_list）
 # ---------------------------------------------------------------------------
 
+def is_on_main_chat_list(xml: str, elements: dict) -> bool:
+    """当前 hierarchy 是否在主聊天列表（非招呼子页、非私聊内）。"""
+    ec = ElementsConfig(elements)
+    row_rid = ec.get_rid("chat_list", "chat_row")
+    if not row_rid or row_rid not in xml:
+        return False
+    accept_rid = ec.get_rid("buttons", "accept_button")
+    send_rid = ec.get_rid("buttons", "send_button")
+    input_rid = ec.get_rid("buttons", "input_box")
+    if accept_rid and accept_rid in xml:
+        return False
+    if send_rid and send_rid in xml:
+        return False
+    if input_rid and input_rid in xml:
+        return False
+    return True
+
+
+def try_open_chat_tab(driver: Any, elements: dict, logger: logging.Logger) -> bool:
+    """点击底部「消息」tab，尝试从桌面或其它 tab 回到聊天列表。"""
+    ec = ElementsConfig(elements)
+    text = ec.get_text("chat_list", "chat_entry")
+    if not text:
+        return False
+    try:
+        if not driver.d(text=text).exists:
+            logger.debug("未发现聊天入口文案: %s", text)
+            return False
+        if driver.random_click(text):
+            time.sleep(random.uniform(0.5, 1.0))
+            try:
+                driver.wait_ui_stable(max_wait=1.0)
+            except Exception:
+                pass
+            return True
+    except Exception:
+        logger.debug("open_chat_tab 异常", exc_info=True)
+    return False
+
+
 def go_back_to_chat_list(
     driver: Any,
     elements: dict,
@@ -165,17 +205,20 @@ def go_back_to_chat_list(
     max_backs: int = 5,
     logger: Optional[logging.Logger] = None,
 ) -> bool:
-    """从任意界面按 back 返回聊天列表。
+    """从子页面按 back 返回主聊天列表；已在列表时不按 back，避免退出陌陌。
 
-    验证策略：同时检测 chat_row 存在 且 accept_button 不存在
-    （区分主聊天列表和招呼子页面）。
+    验证策略：chat_row 存在，且无 accept_button / send_button / input_box。
+    失败时尝试点击底部「消息」tab，不再追加 blind back。
     """
     log = logger or logging.getLogger("navigator")
-    ec = ElementsConfig(elements)
-    row_rid = ec.get_rid("chat_list", "chat_row")
-    accept_rid = ec.get_rid("buttons", "accept_button")
-    send_rid = ec.get_rid("buttons", "send_button")
-    input_rid = ec.get_rid("buttons", "input_box")
+
+    try:
+        xml = driver.d.dump_hierarchy()
+        if is_on_main_chat_list(xml, elements):
+            log.debug("已在主聊天列表，跳过 back")
+            return True
+    except Exception:
+        log.debug("首轮页面检测异常", exc_info=True)
 
     for i in range(max_backs):
         try:
@@ -189,22 +232,19 @@ def go_back_to_chat_list(
             pass
         try:
             xml = driver.d.dump_hierarchy()
-            if row_rid and row_rid in xml:
-                # 在招呼子页面（有 accept_button）→ 继续 back
-                if accept_rid and accept_rid in xml:
-                    log.debug("仍在招呼子页面，继续 back")
-                    continue
-                # 在私聊页面（有 send_button/input_box）→ 继续 back
-                if send_rid and send_rid in xml:
-                    log.debug("仍在私聊页面，继续 back")
-                    continue
-                if input_rid and input_rid in xml:
-                    log.debug("仍在私聊页面（input_box），继续 back")
-                    continue
+            if is_on_main_chat_list(xml, elements):
                 log.info("已回到聊天列表 (第 %d 次 back)", i + 1)
                 return True
         except Exception:
             log.debug("dump hierarchy 检测异常", exc_info=True)
 
-    log.warning("%d 次 back 后仍未回到聊天列表", max_backs)
+    log.warning("%d 次 back 后仍未回到聊天列表，尝试 open 消息 tab", max_backs)
+    if try_open_chat_tab(driver, elements, log):
+        try:
+            xml = driver.d.dump_hierarchy()
+            if is_on_main_chat_list(xml, elements):
+                log.info("open 消息 tab 后已回到主聊天列表")
+                return True
+        except Exception:
+            log.debug("open tab 后页面检测异常", exc_info=True)
     return False

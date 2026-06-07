@@ -585,9 +585,15 @@ class ChatFlow:
         return False
 
     def ensure_on_chat_list(self, max_backs: int = 5) -> None:
-        """离开私聊回到列表：多次 back + 校验。"""
-        if self._on_chat_list_screen():
-            return
+        """回到主聊天列表：已在列表不按 back；失败则点「消息」tab。"""
+        from utils.helpers import is_on_main_chat_list, try_open_chat_tab
+
+        try:
+            xml = self.driver.d.dump_hierarchy()
+            if is_on_main_chat_list(xml, self.elements):
+                return
+        except Exception:
+            self.log.debug("ensure_on_chat_list 首轮检测异常", exc_info=True)
 
         for i in range(max_backs):
             try:
@@ -595,12 +601,17 @@ class ChatFlow:
             except Exception:
                 self.log.exception("press back 失败 step=%d", i)
             self._sleep_delay()
-            if self._on_chat_list_screen():
-                self.log.info("第 %d 次 back 后已回聊天列表", i + 1)
-                return
+            try:
+                xml = self.driver.d.dump_hierarchy()
+                if is_on_main_chat_list(xml, self.elements):
+                    self.log.info("第 %d 次 back 后已回聊天列表", i + 1)
+                    return
+            except Exception:
+                self.log.debug("ensure_on_chat_list dump 异常 step=%d", i, exc_info=True)
 
-        self.log.warning("%d 次 back 后仍不在列表，尝试 open_chat_list", max_backs)
-        self.open_chat_list()
+        self.log.warning("%d 次 back 后仍不在列表，尝试 open 消息 tab", max_backs)
+        if not try_open_chat_tab(self.driver, self.elements, self.log):
+            self.open_chat_list()
 
     def _open_chat_by_bounds(self, bounds: Dict[str, int]) -> bool:
         try:

@@ -63,12 +63,16 @@ class SessionRound:
         self.serial: Optional[str] = serial or getattr(storage, "serial", None)
 
         # 保留 greeter 用于招呼处理（Phase 1）
-        self.greeter = GreetingScanner(driver, elements, settings)
+        self.greeter = GreetingScanner(
+            driver, elements, settings, serial=self.serial
+        )
         # 保留 chatter 用于 _scroll_to_top 等辅助方法
         self.chatter = OneOnOneChatter(
             driver, elements, settings, storage, serial=self.serial
         )
-        self.inviter = GroupInviter(driver, elements, settings)
+        self.inviter = GroupInviter(
+            driver, elements, settings, serial=self.serial
+        )
 
         try:
             self._pool = MessagePoolManager(settings, serial=self.serial)
@@ -96,7 +100,9 @@ class SessionRound:
         self.current_phase: str = Phase.IDLE
         self.friends_processed_this_round: int = 0
 
-        self._logger = logging.getLogger("session")
+        self._logger = logging.getLogger(
+            f"session.{self.serial}" if self.serial else "session"
+        )
 
     def apply_config(self, settings: dict, elements: dict) -> None:
         """热更新配置：同步到子模块与消息池。"""
@@ -164,6 +170,11 @@ class SessionRound:
         """
         self.current_phase = Phase.APPROVING
 
+        try:
+            self.chat_flow.ensure_on_chat_list()
+        except Exception:
+            self._logger.exception("Step A: 归位聊天列表失败")
+
         badge = self.greeter.scan_badge()
         if badge <= 0:
             self._logger.debug("Step A: 无新招呼")
@@ -192,13 +203,13 @@ class SessionRound:
 
         back_ok = self.greeter.go_back_to_chat_list()
         if not back_ok:
-            self._logger.warning("Step A: go_back_to_chat_list 返回失败，尝试额外恢复")
+            self._logger.warning(
+                "Step A: go_back_to_chat_list 返回失败，尝试 open 消息 tab"
+            )
             try:
-                self.driver.d.press("back")
-                time.sleep(random.uniform(0.5, 1.0))
-                self.driver.wait_ui_stable(max_wait=1.0)
+                self.chat_flow.ensure_on_chat_list()
             except Exception:
-                self._logger.debug("Step A: 额外 back 恢复异常", exc_info=True)
+                self._logger.exception("Step A: ensure_on_chat_list 恢复失败")
 
         # 防御性验证：确认不在招呼子页面
         accept_rid = self.greeter._get_rid("buttons", "accept_button")
@@ -356,15 +367,19 @@ class SessionRound:
                             self._logger.warning("未在邀请面板找到 %s", name)
                     else:
                         self._logger.warning("无法打开邀请面板")
+                    self.inviter.go_back_to_chat_list()
                 else:
                     self._logger.warning("无法进入群信息页「%s」", group_name)
-                self.inviter.go_back_to_chat_list()
 
             # 拉黑
             self.inviter.block_friend(name)
 
             self.storage.mark_status(uid, "done", name=name)
             self._logger.info("Phase 3: %s 已完成（邀请+拉黑）", name)
+            try:
+                self.chat_flow.ensure_on_chat_list()
+            except Exception:
+                self._logger.exception("Phase 3: 互关邀请后归位失败")
         else:
             self._logger.info(
                 "Phase 3: %s 尚未互关 (%s)，下轮再检", name, result.reason
@@ -389,13 +404,17 @@ class SessionRound:
                     self._logger.warning("未在邀请面板找到 %s", name)
             else:
                 self._logger.warning("无法打开邀请面板")
+            self.inviter.go_back_to_chat_list()
         else:
             self._logger.warning("无法进入群信息页「%s」", group_name)
-        self.inviter.go_back_to_chat_list()
 
         self.inviter.block_friend(name)
         self.storage.mark_status(uid, "done", name=name)
         self._logger.info("Phase 3: %s 已完成（邀请+拉黑）", name)
+        try:
+            self.chat_flow.ensure_on_chat_list()
+        except Exception:
+            self._logger.exception("Phase 3: 直接拉群后归位失败")
 
     # ------------------------------------------------------------------
     # Phase 4 — 等待下一轮
