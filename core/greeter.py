@@ -22,6 +22,7 @@ class GreetingScanner:
         self.driver = driver
         self.elements = elements
         self.settings = settings
+        self.serial = serial
         self._ec = ElementsConfig(elements)
         self._logger = logging.getLogger(
             f"greeter.{serial}" if serial else "greeter"
@@ -142,6 +143,10 @@ class GreetingScanner:
                         cy = (b[1] + b[3]) // 2
                         self.driver.random_click_xy(cx, cy)
                         random_delay(self.settings)
+                        try:
+                            self.driver.wait_ui_stable(max_wait=2.5)
+                        except Exception:
+                            self._logger.debug("enter_sayhi_list: wait_ui_stable 异常", exc_info=True)
                         self._logger.info("已点击「收到的招呼」")
                         return True
 
@@ -237,10 +242,15 @@ class GreetingScanner:
                 self._logger.warning("未配置 accept_button resourceId")
                 return None
 
+            wait_s = float(self.settings.get("sayhi_accept_wait_s", 4.0))
             el = self.driver.d(resourceId=accept_rid)
-            if not el.exists:
-                self._logger.warning("approve_one: 未找到「通过」按钮")
-                return None
+            if not el.wait(timeout=wait_s):
+                el = self.driver.d(text="通过")
+                if not el.wait(timeout=2.0):
+                    self._logger.warning(
+                        "approve_one: 未找到「通过」按钮 (rid=%s)", accept_rid
+                    )
+                    return None
 
             name: Optional[str] = None
             try:
