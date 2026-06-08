@@ -64,7 +64,27 @@ class AgentDeviceProxy:
     # ------------------------------------------------------------------
     # DeviceProxy 接口
     # ------------------------------------------------------------------
-    def dump_hierarchy(self, compressed: bool = False, pretty: bool = False) -> str:
+    def dump_hierarchy(
+        self,
+        compressed: bool = False,
+        pretty: bool = False,
+        *,
+        _skip_ad_clear: bool = False,
+    ) -> str:
+        xml = self.dump_hierarchy_raw(compressed=compressed)
+        if _skip_ad_clear:
+            return xml
+        from actions.ui_hierarchy import ensure_hierarchy_without_top_call_ad
+
+        owner = getattr(self, "_owner", None)
+        return ensure_hierarchy_without_top_call_ad(
+            owner,
+            self,
+            xml,
+            compressed=compressed,
+        )
+
+    def dump_hierarchy_raw(self, compressed: bool = False) -> str:
         res = self._call("dump_hierarchy", {"compressed": bool(compressed)})
         if not isinstance(res, dict) or "xml" not in res:
             raise RuntimeError(f"agent dump_hierarchy 返回异常: {res!r}")
@@ -371,6 +391,7 @@ class AgentHandler:
             self.settings = yaml.safe_load(f)["config"]
         self.serial = serial or ""
         self.d: AgentDeviceProxy = AgentDeviceProxy(self.serial, router=router)
+        self.d._owner = self
         self._ime_ready: Optional[bool] = None
         logging.info("AgentHandler 初始化 serial=%s router=%s", self.serial, router)
 

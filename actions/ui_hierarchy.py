@@ -8,6 +8,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import random
 from typing import Any, Dict, Optional
 
 BOUNDS_RE = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
@@ -43,6 +44,107 @@ def _parse_bounds(raw_bounds: str) -> Optional[Dict[str, int]]:
         "right": right,
         "bottom": bottom,
     }
+
+
+# 与 config/elements.yaml → top_call_ad 对齐
+_TOP_CALL_AD_HANG_UP_RID = "com.immomo.momo:id/img_close"
+_TOP_CALL_AD_ACCEPT_RID = "com.immomo.momo:id/svga_accept"
+_TOP_CALL_AD_TITLE_RID = "com.immomo.momo:id/tv_title"
+_TOP_CALL_AD_TITLE_HINT = "打给你"
+
+
+def detect_top_call_ad(root: ET.Element) -> Optional[Dict[str, int]]:
+    """若存在顶部视频来电广告，返回红色挂断按钮 bounds；否则 None。"""
+    try:
+        hang_bounds: Optional[Dict[str, int]] = None
+        has_marker = False
+        for node in root.iter():
+            rid = node.attrib.get("resource-id") or ""
+            if rid == _TOP_CALL_AD_ACCEPT_RID:
+                has_marker = True
+            if rid == _TOP_CALL_AD_TITLE_RID:
+                txt = (node.attrib.get("text") or "").strip()
+                if _TOP_CALL_AD_TITLE_HINT in txt:
+                    has_marker = True
+            if rid != _TOP_CALL_AD_HANG_UP_RID:
+                continue
+            if node.attrib.get("clickable") != "true":
+                continue
+            b = _parse_bounds(node.attrib.get("bounds", ""))
+            if b and b["top"] < 400:
+                hang_bounds = b
+        if hang_bounds and has_marker:
+            return hang_bounds
+        return None
+    except Exception:
+        logging.exception("detect_top_call_ad 异常")
+        return None
+
+
+def _click_bounds_center(driver: Any, bounds: Dict[str, int]) -> None:
+    """带随机偏移点击 bounds 中心（遵守项目点击约定）。"""
+    cx = (bounds["left"] + bounds["right"]) // 2
+    cy = (bounds["top"] + bounds["bottom"]) // 2
+    if hasattr(driver, "random_click_xy"):
+        driver.random_click_xy(cx, cy)
+        return
+    owner = getattr(driver, "_owner", None)
+    if owner is not None and hasattr(owner, "random_click_xy"):
+        owner.random_click_xy(cx, cy)
+        return
+    if hasattr(driver, "click"):
+        driver.click(cx, cy)
+        return
+    raise RuntimeError("无法执行带偏移点击：driver 无 random_click_xy/click")
+
+
+def ensure_hierarchy_without_top_call_ad(
+    driver: Any,
+    proxy: Any,
+    xml: str,
+    *,
+    compressed: bool = False,
+    logger: Optional[logging.Logger] = None,
+    max_attempts: int = 3,
+) -> str:
+    """dump 成功后：若顶部视频来电广告仍在，点挂断并 re-dump 直至消失。"""
+    log = logger or logging.getLogger("ui_hierarchy")
+    click_driver = driver if driver is not None else proxy
+
+    for attempt in range(max(1, max_attempts)):
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            log.warning("ensure_hierarchy_without_top_call_ad: XML 解析失败")
+            return xml
+
+        hang_bounds = detect_top_call_ad(root)
+        if hang_bounds is None:
+            return xml
+
+        log.info("检测到顶部视频来电广告，点击红色挂断 (attempt %d/%d)", attempt + 1, max_attempts)
+        try:
+            _click_bounds_center(click_driver, hang_bounds)
+        except Exception:
+            log.exception("点击顶部广告挂断按钮异常")
+            return xml
+
+        time.sleep(random.uniform(0.4, 0.9))
+        try:
+            if hasattr(proxy, "dump_hierarchy_raw"):
+                xml = proxy.dump_hierarchy_raw(compressed=compressed)
+            else:
+                xml = proxy.dump_hierarchy(compressed=compressed, _skip_ad_clear=True)
+        except Exception:
+            log.exception("挂断广告后 re-dump 异常")
+            return xml
+
+    try:
+        if detect_top_call_ad(ET.fromstring(xml)):
+            log.warning("多次挂断后顶部视频来电广告仍在")
+    except Exception:
+        log.debug("挂断后最终检测异常", exc_info=True)
+    return xml
 
 
 def _hierarchy_xml_parseable(xml: str) -> bool:

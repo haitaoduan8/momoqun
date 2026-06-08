@@ -7,12 +7,14 @@ import { LogArea } from "@/components/LogArea";
 import { MasterAddressPanel } from "@/components/MasterAddressPanel";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { AccountCheckPanel } from "@/components/AccountCheckPanel";
+import { InitPanel } from "@/components/InitPanel";
 import { useDashboard } from "@/lib/hooks";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Smartphone,
   Settings,
   Shield,
+  Rocket,
   LogOut,
   Menu,
   X,
@@ -23,7 +25,7 @@ import { useState } from "react";
 import { shutdown } from "@/lib/api";
 
 // 页面类型
-type PageType = "devices" | "config" | "account";
+type PageType = "devices" | "config" | "init" | "account";
 
 // Logo 组件
 function Logo() {
@@ -56,6 +58,7 @@ function Sidebar({
   const menuItems = [
     { icon: Smartphone, label: "设备管理", page: "devices" as PageType },
     { icon: Settings, label: "运行配置", page: "config" as PageType },
+    { icon: Rocket, label: "初始化", page: "init" as PageType },
     { icon: Shield, label: "账号检测", page: "account" as PageType },
   ];
 
@@ -227,6 +230,8 @@ export default function Home() {
         return <DevicesPage />;
       case "config":
         return <ConfigPanel />;
+      case "init":
+        return <InitPanel />;
       case "account":
         return <AccountCheckPanel />;
       default:
@@ -241,6 +246,8 @@ export default function Home() {
         return "设备管理";
       case "config":
         return "运行配置";
+      case "init":
+        return "初始化";
       case "account":
         return "账号检测";
       default:

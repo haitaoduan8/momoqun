@@ -56,6 +56,16 @@ gift_panel:
   gift_item_name:
     resourceId: "com.immomo.momo:id/tv_gift_name"
 
+# 首页顶部「视频来电」浮层广告（挂断红钮 + 接听绿钮 SVGA）
+top_call_ad:
+  hang_up_button:
+    resourceId: "com.immomo.momo:id/img_close"
+  accept_button:
+    resourceId: "com.immomo.momo:id/svga_accept"
+  title:
+    resourceId: "com.immomo.momo:id/tv_title"
+    text: "他正打给你"
+
 buttons:
   accept_button:
     resourceId: "com.immomo.momo:id/icon_sayhi_confirm_btn"

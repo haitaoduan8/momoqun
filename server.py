@@ -593,6 +593,144 @@ async def api_logs(limit: int = 200):
 
 
 # ---------------------------------------------------------------------------
+# 初始化 API（ADB 设备发现、Agent 配置下发、文件推送）
+# ---------------------------------------------------------------------------
+def _recommended_ws_url() -> str:
+    try:
+        addresses = _detect_host_ipv4()
+        if addresses:
+            return f"ws://{addresses[0]}:{MASTER_PORT}"
+    except Exception:
+        logger.debug("推荐 ws_url 探测失败", exc_info=True)
+    return f"ws://127.0.0.1:{MASTER_PORT}"
+
+
+@app.get("/api/init/adb/devices")
+async def api_init_adb_devices():
+    """刷新 adb devices 并返回型号与 agent_serial 预览。"""
+    try:
+        from ops.adb_ops import list_devices
+        from ops.agent_init import adb_serial_to_agent_serial
+
+        devices = list_devices()
+        for d in devices:
+            adb_serial = d.get("adb_serial") or ""
+            d["agent_serial"] = adb_serial_to_agent_serial(adb_serial) if adb_serial else ""
+        return {"ok": True, "devices": devices}
+    except Exception as e:
+        logger.exception("init adb devices 失败")
+        return JSONResponse({"ok": False, "error": str(e), "devices": []}, status_code=500)
+
+
+@app.post("/api/init/agent/deploy")
+async def api_init_agent_deploy(data: dict = None):
+    """批量下发 SET_CONFIG（可选安装 APK）。body: serials, master_url, install_apk, apk_path"""
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        from ops.agent_init import DEFAULT_APK_PATH, deploy_many, resolve_target_serials
+
+        serials = resolve_target_serials(data.get("serials"))
+        if not serials:
+            return JSONResponse(
+                {"ok": False, "error": "无在线 ADB 设备，请先 adb devices 确认"},
+                status_code=400,
+            )
+        master_url = (data.get("master_url") or "").strip() or _recommended_ws_url()
+        install_apk = bool(data.get("install_apk"))
+        apk_path = (data.get("apk_path") or "").strip() or None
+        result = deploy_many(
+            serials,
+            master_url,
+            install_apk=install_apk,
+            apk_path=apk_path,
+        )
+        logs = []
+        for r in result.get("results") or []:
+            if r.get("ok"):
+                logs.append(f"{r.get('adb_serial')}: 配置下发成功 → {r.get('agent_serial')}")
+            else:
+                logs.append(
+                    f"{r.get('adb_serial')}: 失败 ({r.get('step')}) — {r.get('error') or '未知错误'}"
+                )
+        result["logs"] = logs
+        return result
+    except Exception as e:
+        logger.exception("init agent deploy 失败")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/init/adb/push-preview")
+async def api_init_adb_push_preview(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        from ops.adb_ops import list_online_serials, preview_batch_pairing
+        from ops.agent_init import resolve_target_serials
+
+        local_dir = (data.get("local_dir") or "").strip()
+        if not local_dir:
+            return JSONResponse({"ok": False, "error": "请提供 local_dir"}, status_code=400)
+        serials = resolve_target_serials(data.get("serials"))
+        if not serials:
+            serials = list_online_serials()
+        preview = preview_batch_pairing(local_dir, serials)
+        if not preview.get("ok"):
+            return JSONResponse(preview, status_code=400)
+        return preview
+    except Exception as e:
+        logger.exception("push-preview 失败")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/init/adb/push-batch")
+async def api_init_adb_push_batch(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        from ops.adb_ops import list_online_serials, push_batch_pairing
+        from ops.agent_init import resolve_target_serials
+
+        local_dir = (data.get("local_dir") or "").strip()
+        remote_dir = (data.get("remote_dir") or "/sdcard/Download").strip()
+        if not local_dir:
+            return JSONResponse({"ok": False, "error": "请提供 local_dir"}, status_code=400)
+        serials = resolve_target_serials(data.get("serials"))
+        if not serials:
+            serials = list_online_serials()
+        if not serials:
+            return JSONResponse({"ok": False, "error": "无在线 ADB 设备"}, status_code=400)
+        result = push_batch_pairing(local_dir, serials, remote_dir)
+        return result
+    except Exception as e:
+        logger.exception("push-batch 失败")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/init/adb/push-file")
+async def api_init_adb_push_file(data: dict = None):
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        from ops.adb_ops import push_single_replace
+        from ops.agent_init import resolve_target_serials
+
+        local_file = (data.get("local_file") or "").strip()
+        remote_dir = (data.get("remote_dir") or "/sdcard/Download").strip()
+        if not local_file:
+            return JSONResponse({"ok": False, "error": "请提供 local_file"}, status_code=400)
+        serials = resolve_target_serials(data.get("serials"))
+        if not serials:
+            return JSONResponse({"ok": False, "error": "请至少选择一台设备"}, status_code=400)
+        results = [push_single_replace(s, local_file, remote_dir) for s in serials]
+        success = sum(1 for r in results if r.get("ok"))
+        return {"ok": True, "results": results, "success": success, "fail": len(results) - success}
+    except Exception as e:
+        logger.exception("push-file 失败")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
 # 配置 API
 # ---------------------------------------------------------------------------
 @app.get("/api/config")

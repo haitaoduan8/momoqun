@@ -252,6 +252,114 @@ export async function dismissAccountCheck(serial: string): Promise<{ ok: boolean
   });
 }
 
+// ============ 初始化（ADB / Agent 配置 / 文件推送） ============
+
+export interface InitAdbDevice {
+  adb_serial: string;
+  model: string;
+  state: string;
+  agent_serial?: string;
+}
+
+export interface InitDeployResult {
+  adb_serial: string;
+  agent_serial?: string;
+  ok: boolean;
+  step?: string;
+  error?: string | null;
+  install_ok?: boolean;
+}
+
+export interface InitDeployResponse {
+  ok: boolean;
+  master_url?: string;
+  results?: InitDeployResult[];
+  success?: number;
+  fail?: number;
+  logs?: string[];
+  error?: string;
+}
+
+export interface PushPairPreview {
+  ok: boolean;
+  error?: string;
+  file_count?: number;
+  device_count?: number;
+  pair_count?: number;
+  extra_files?: number;
+  extra_devices?: number;
+  pairs?: Array<{ adb_serial: string; file: string; local_path: string }>;
+}
+
+export interface PushItemResult {
+  adb_serial: string;
+  ok: boolean;
+  file?: string;
+  remote?: string;
+  error?: string | null;
+}
+
+export interface PushBatchResponse {
+  ok: boolean;
+  error?: string;
+  results?: PushItemResult[];
+  success?: number;
+  fail?: number;
+  preview?: PushPairPreview;
+}
+
+export async function listInitDevices(): Promise<{
+  ok: boolean;
+  devices: InitAdbDevice[];
+  error?: string;
+}> {
+  return fetchAPI("/api/init/adb/devices");
+}
+
+export async function deployAgentInit(body: {
+  serials?: string[];
+  master_url?: string;
+  install_apk?: boolean;
+  apk_path?: string;
+}): Promise<InitDeployResponse> {
+  return fetchAPI("/api/init/agent/deploy", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function previewPushBatch(body: {
+  local_dir: string;
+  serials?: string[];
+}): Promise<PushPairPreview> {
+  return fetchAPI("/api/init/adb/push-preview", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function pushBatch(body: {
+  local_dir: string;
+  remote_dir?: string;
+  serials?: string[];
+}): Promise<PushBatchResponse> {
+  return fetchAPI("/api/init/adb/push-batch", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function pushFile(body: {
+  local_file: string;
+  remote_dir?: string;
+  serials: string[];
+}): Promise<PushBatchResponse> {
+  return fetchAPI("/api/init/adb/push-file", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // ============ 系统控制 ============
 
 export async function shutdown(): Promise<{ ok: boolean; message?: string }> {
