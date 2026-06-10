@@ -7,6 +7,8 @@ config:
     page_verify_retries: 12
     post_click_stable_s: 2
     allow_coord_fallback: true
+    badge_drag_hold_ms: 750
+    badge_drag_swipe_ms: 2200
     post_dynamic_enabled: true
     post_publish_wait_s: 2
     preset_address: 成都市就是低价

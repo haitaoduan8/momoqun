@@ -3,6 +3,7 @@ package com.momoqun.agent.ws
 import android.content.Context
 import android.os.SystemClock
 import com.momoqun.agent.rpc.ClickHandler
+import com.momoqun.agent.rpc.DragHoldHandler
 import com.momoqun.agent.rpc.DumpHierarchyHandler
 import com.momoqun.agent.rpc.ImeStatusHandler
 import com.momoqun.agent.rpc.KeyboardVisibleHandler
@@ -32,6 +33,7 @@ class RpcDispatcher(private val ctx: Context) {
             "click" -> ClickHandler.handle(req.params)
             "long_click" -> LongClickHandler.handle(req.params)
             "swipe" -> SwipeHandler.handle(req.params)
+            "drag_hold" -> DragHoldHandler.handle(req.params)
             "press_key" -> PressKeyHandler.handle(req.params)
             "type_text" -> TypeTextHandler.handle(req.params)
             "window_size" -> WindowSizeHandler.handle()

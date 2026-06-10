@@ -27,6 +27,7 @@ account_boot:
       x: 135
       y: 2280
     first_clone:
+      page: weiba
       x: 135
       y: 805
     one_key_switch:

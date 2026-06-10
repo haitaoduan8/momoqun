@@ -109,6 +109,28 @@ class AgentDeviceProxy:
             },
         )
 
+    def drag_hold(
+        self,
+        x: int,
+        y: int,
+        x2: int,
+        y2: int,
+        *,
+        hold_ms: int = 750,
+        drag_ms: int = 2200,
+    ) -> None:
+        self._call(
+            "drag_hold",
+            {
+                "x": int(x),
+                "y": int(y),
+                "x2": int(x2),
+                "y2": int(y2),
+                "hold_ms": int(hold_ms),
+                "drag_ms": int(drag_ms),
+            },
+        )
+
     def press(self, key: str) -> None:
         self._call("press_key", {"key": str(key)})
 

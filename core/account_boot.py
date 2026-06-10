@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import random
 import time
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
@@ -155,6 +156,8 @@ _PAGE_PRESETS: dict = {
         "all": [{"package": "com.miui.miuibbs"}],
         "any": [
             {"text": "一键切换", "partial": True},
+            {"text": "分身切换", "partial": True},
+            {"text": "检测到", "partial": True},
             {"contentDesc": "分身"},
         ],
     },
@@ -367,6 +370,72 @@ def _weiba_bottom_bar_visible(root: ET.Element) -> bool:
     return False
 
 
+def _find_first_clone_centroid(root: ET.Element) -> Optional[tuple[int, int]]:
+    """分身列表第一个可点文件号（content-desc 为数字 id）。"""
+    candidates: list[tuple[int, int, tuple[int, int, int, int]]] = []
+    for node in root.iter():
+        if node.attrib.get("package") != "com.miui.miuibbs":
+            continue
+        if node.attrib.get("clickable") != "true":
+            continue
+        desc = (node.attrib.get("content-desc") or "").strip()
+        if not desc.isdigit():
+            continue
+        bounds = parse_bounds(node.attrib.get("bounds", ""))
+        if bounds is None:
+            continue
+        candidates.append((bounds[1], bounds[0], bounds))
+    if not candidates:
+        return None
+    candidates.sort()
+    b = candidates[0][2]
+    return (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+
+
+def _attempt_page_ok_click(
+    driver: Any,
+    settings: dict,
+    spec: dict,
+    logger: logging.Logger,
+    *,
+    label: str,
+    page: Any,
+    find_target: Optional[Any] = None,
+) -> bool:
+    """页面已对齐时：优先元素坐标，否则配置坐标兜底。成功返回 True。"""
+    try:
+        diag = dump_and_verify_page(
+            driver, page, _PAGE_PRESETS, logger=logger,
+        )
+        if diag is None:
+            return False
+        _, root = diag
+        target = find_target(root) if find_target else _find_spec_target(root, spec)
+        if target is not None:
+            cx, cy = target
+            logger.info("【点击】%s → (%s, %s)", label, cx, cy)
+            driver.random_click_xy(cx, cy)
+            random_delay(settings)
+            _after_click_settle(driver, settings, logger, label=label)
+            return True
+        if _spec_needs_element(spec):
+            _log_element_miss_hint(root, spec, logger, label)
+        if _coord_click_spec(
+            driver,
+            settings,
+            spec,
+            logger,
+            label=label,
+            reason="页面已就绪但元素未在无障碍树",
+        ):
+            return True
+    except DumpRecoveryFailed:
+        raise
+    except Exception:
+        logger.exception("页面就绪后兜底点击失败: %s", label)
+    return False
+
+
 def _coord_click_spec(
     driver: Any,
     settings: dict,
@@ -447,30 +516,10 @@ def _click_spec(
             element_ready=_element_ready if need_el else None,
         )
         if verified is None:
-            if need_el:
-                try:
-                    diag = dump_and_verify_page(
-                        driver, page, _PAGE_PRESETS, logger=logger,
-                    )
-                    if diag is not None:
-                        _, root = diag
-                        if _find_spec_target(root, spec) is not None:
-                            verified = diag
-                        else:
-                            _log_element_miss_hint(root, spec, logger, label)
-                            if _coord_click_spec(
-                                driver,
-                                settings,
-                                spec,
-                                logger,
-                                label=label,
-                                reason="页面已就绪但元素未在无障碍树",
-                            ):
-                                return
-                except DumpRecoveryFailed:
-                    raise
-                except Exception:
-                    logger.exception("兜底前 dump 失败: %s", label)
+            if _attempt_page_ok_click(
+                driver, settings, spec, logger, label=label, page=page,
+            ):
+                return
             if verified is None:
                 _fail_click(
                     logger,
@@ -524,26 +573,41 @@ def _xml_contains(driver: Any, needle: str) -> bool:
         return False
 
 
+def _click_first_clone_slot(
+    driver: Any,
+    settings: dict,
+    spec: dict,
+    logger: logging.Logger,
+    *,
+    label: str = "first_clone",
+    reason: str = "",
+) -> bool:
+    """点击分身列表左上角第一个文件号槽位（固定配置坐标，避免树扫描点到第 2/3 个）。"""
+    x, y = spec.get("x"), spec.get("y")
+    if x is None or y is None:
+        return False
+    if reason:
+        logger.warning("【坐标兜底】%s %s → (%s, %s)", label, reason, x, y)
+    else:
+        logger.info("【点击】第一个文件号 → (%s, %s)", x, y)
+    driver.random_click_xy(int(x), int(y))
+    random_delay(settings)
+    _after_click_settle(driver, settings, logger, label=label)
+    return True
+
+
 def _click_first_clone(
     driver: Any,
     settings: dict,
     cfg: dict,
     logger: logging.Logger,
 ) -> None:
-    spec = (cfg.get("weiba") or {}).get("first_clone") or {}
+    """第一个文件号：微霸页就绪后点击固定槽位 (135,805)，不依赖无障碍树枚举。"""
+    spec = dict((cfg.get("weiba") or {}).get("first_clone") or {})
     page = _spec_page(spec) or "weiba"
+    spec["page"] = page
     opts = _page_verify_opts(settings)
-
-    def _clone_ready(root: ET.Element) -> bool:
-        for node in root.iter():
-            if node.attrib.get("package") != "com.miui.miuibbs":
-                continue
-            if node.attrib.get("clickable") != "true":
-                continue
-            desc = (node.attrib.get("content-desc") or "").strip()
-            if desc.isdigit():
-                return True
-        return False
+    label = "first_clone"
 
     try:
         verified = wait_before_click(
@@ -553,52 +617,38 @@ def _click_first_clone(
             retries=opts["retries"],
             poll_s=opts["poll_s"],
             logger=logger,
-            label="first_clone",
-            element_ready=_clone_ready,
+            label=label,
         )
-        if verified is None:
-            _fail_click(
-                logger,
-                "first_clone",
-                f"分身列表未就绪 page={page}（已重试 {opts['retries']} 次）",
-            )
-        _, root = verified
-        candidates: list[tuple[int, int, tuple[int, int, int, int]]] = []
-        for node in root.iter():
-            if node.attrib.get("package") != "com.miui.miuibbs":
-                continue
-            if node.attrib.get("clickable") != "true":
-                continue
-            desc = (node.attrib.get("content-desc") or "").strip()
-            if not desc.isdigit():
-                continue
-            bounds = parse_bounds(node.attrib.get("bounds", ""))
-            if bounds is None:
-                continue
-            candidates.append((bounds[1], bounds[0], bounds))
-        if candidates:
-            candidates.sort()
-            b = candidates[0][2]
-            cx = (b[0] + b[2]) // 2
-            cy = (b[1] + b[3]) // 2
-            logger.info("【点击】第一个分身 (%s, %s)", cx, cy)
-            driver.random_click_xy(cx, cy)
-            random_delay(settings)
-            _after_click_settle(driver, settings, logger, label="first_clone")
+        if verified is not None:
+            if _click_first_clone_slot(driver, settings, spec, logger, label=label):
+                return
+            _fail_click(logger, label, "未配置第一个文件号坐标")
+
+        if _attempt_page_ok_click(
+            driver, settings, spec, logger, label=label, page=page,
+        ):
             return
+        if _allow_coord_fallback(settings, spec) and _click_first_clone_slot(
+            driver,
+            settings,
+            spec,
+            logger,
+            label=label,
+            reason="微霸页未完全识别，仍点击第一个文件号槽位",
+        ):
+            return
+        _fail_click(
+            logger,
+            label,
+            f"微霸分身页未就绪 page={page}（已重试 {opts['retries']} 次）",
+        )
     except BootStepFailed:
         raise
     except DumpRecoveryFailed:
         raise
     except Exception:
-        logger.exception("查找第一个分身失败")
-    if _allow_coord_fallback(settings, spec):
-        x, y = spec.get("x"), spec.get("y")
-        if x is not None and y is not None:
-            logger.warning("【坐标兜底】first_clone 使用配置坐标")
-            _click_xy(driver, settings, int(x), int(y), logger, page=page, label="first_clone(fallback)")
-            return
-    _fail_click(logger, "first_clone", "未找到可点击的第一个文件号")
+        logger.exception("点击第一个分身失败")
+        _fail_click(logger, label, "点击第一个分身异常")
 
 
 def _weiba_switch_dialog_visible(root: ET.Element) -> bool:
@@ -663,6 +713,26 @@ def _click_one_key_switch(
             element_ready=_weiba_switch_dialog_visible,
         )
         if verified is None:
+            if _attempt_page_ok_click(
+                driver, settings, spec, logger, label=label, page=page,
+            ):
+                return
+            x, y = spec.get("x"), spec.get("y")
+            if (
+                _allow_coord_fallback(settings, spec)
+                and x is not None
+                and y is not None
+            ):
+                logger.warning(
+                    "【坐标兜底】%s 弹窗未在无障碍树出现，使用配置坐标 → (%s, %s)",
+                    label,
+                    x,
+                    y,
+                )
+                driver.random_click_xy(int(x), int(y))
+                random_delay(settings)
+                _after_click_settle(driver, settings, logger, label=label)
+                return
             _fail_click(
                 logger,
                 label,
@@ -804,6 +874,19 @@ def _badge_still_on_message_tab(root: ET.Element, badge_spec: dict) -> bool:
     return _find_message_tab_badge_xy(root, badge_spec) is not None
 
 
+def _badge_drag_timings(settings: dict) -> tuple[int, int]:
+    boot_cfg = (settings or {}).get("account_boot") or {}
+    try:
+        hold_ms = int(boot_cfg.get("badge_drag_hold_ms") or 750)
+    except (TypeError, ValueError):
+        hold_ms = 750
+    try:
+        drag_ms = int(boot_cfg.get("badge_drag_swipe_ms") or 2200)
+    except (TypeError, ValueError):
+        drag_ms = 2200
+    return max(100, hold_ms), max(200, drag_ms)
+
+
 def _perform_badge_drag_gesture(
     driver: Any,
     settings: dict,
@@ -812,21 +895,36 @@ def _perform_badge_drag_gesture(
     end_x: int,
     end_y: int,
     logger: logging.Logger,
+    *,
+    hold_ms: Optional[int] = None,
+    drag_ms: Optional[int] = None,
 ) -> None:
-    ox = random.randint(
-        -settings["click_offset"]["x"], settings["click_offset"]["x"]
-    )
-    oy = random.randint(
-        -settings["click_offset"]["y"], settings["click_offset"]["y"]
-    )
+    co = (settings or {}).get("click_offset") or {}
+    ox_max = int(co.get("x") or 5)
+    oy_max = int(co.get("y") or 5)
+    ox = random.randint(-ox_max, ox_max)
+    oy = random.randint(-oy_max, oy_max)
     sx, sy = start_x + ox, start_y + oy
-    logger.info("拖走消息红点 (%s,%s) → (%s,%s)", sx, sy, end_x, end_y)
-    try:
-        driver.d.long_click(sx, sy, 0.65)
-    except Exception:
-        logger.debug("long_click 红点失败，直接 swipe", exc_info=True)
-    driver.d.swipe(sx, sy, end_x, end_y, 0.95)
+    default_hold, default_drag = _badge_drag_timings(settings)
+    hold_ms = default_hold if hold_ms is None else hold_ms
+    drag_ms = default_drag if drag_ms is None else drag_ms
+    logger.info(
+        "拖走消息红点 (%s,%s) → (%s,%s) hold=%sms drag=%sms",
+        sx,
+        sy,
+        end_x,
+        end_y,
+        hold_ms,
+        drag_ms,
+    )
+    drag_hold = getattr(driver.d, "drag_hold", None)
+    if callable(drag_hold):
+        drag_hold(sx, sy, end_x, end_y, hold_ms=hold_ms, drag_ms=drag_ms)
+    else:
+        # 旧版 APK：单次慢滑，避免 long_click + swipe 两次命令中间抬手
+        driver.d.swipe(sx, sy, end_x, end_y, max(drag_ms, hold_ms + drag_ms) / 1000.0)
     random_delay(settings)
+    time.sleep(0.8)
 
 
 def _drag_message_badge(
@@ -871,21 +969,54 @@ def _drag_message_badge(
         start_x, start_y = pos
         end_x = int(target.get("x") or 1050)
         end_y = int(target.get("y") or 300)
-        _perform_badge_drag_gesture(
-            driver, settings, start_x, start_y, end_x, end_y, logger
-        )
-        try:
-            xml = driver.d.dump_hierarchy()
-            after_root = ET.fromstring(xml)
-            if _badge_still_on_message_tab(after_root, badge_spec):
-                logger.warning("首次拖动后红点仍在，重试一次")
-                pos2 = _find_message_tab_badge_xy(after_root, badge_spec)
-                if pos2 is not None:
-                    _perform_badge_drag_gesture(
-                        driver, settings, pos2[0], pos2[1], end_x, end_y, logger
-                    )
-        except Exception:
-            logger.debug("拖动后校验红点状态失败", exc_info=True)
+        hold_ms, drag_ms = _badge_drag_timings(settings)
+        max_attempts = 3
+        cleared = False
+        for attempt in range(1, max_attempts + 1):
+            try:
+                pos_now = (start_x, start_y)
+                if attempt > 1:
+                    xml_retry = driver.d.dump_hierarchy()
+                    root_retry = ET.fromstring(xml_retry)
+                    found = _find_message_tab_badge_xy(root_retry, badge_spec)
+                    if found is None:
+                        cleared = True
+                        break
+                    pos_now = found
+                attempt_hold = hold_ms + (attempt - 1) * 200
+                attempt_drag = drag_ms + (attempt - 1) * 400
+                _perform_badge_drag_gesture(
+                    driver,
+                    settings,
+                    pos_now[0],
+                    pos_now[1],
+                    end_x,
+                    end_y,
+                    logger,
+                    hold_ms=attempt_hold,
+                    drag_ms=attempt_drag,
+                )
+                xml_after = driver.d.dump_hierarchy()
+                after_root = ET.fromstring(xml_after)
+                if not _badge_still_on_message_tab(after_root, badge_spec):
+                    cleared = True
+                    logger.info("消息 Tab 红点已拖走（第 %d 次）", attempt)
+                    break
+                logger.warning(
+                    "第 %d/%d 次拖动后红点仍在，%s",
+                    attempt,
+                    max_attempts,
+                    "重试" if attempt < max_attempts else "继续后续步骤",
+                )
+            except Exception:
+                logger.exception("第 %d 次拖走红点手势异常", attempt)
+                if attempt >= max_attempts:
+                    raise
+        if not cleared:
+            logger.warning(
+                "消息红点未能拖走（已尝试 %d 次），不阻断上号；请确认 Agent APK 已更新并支持 drag_hold",
+                max_attempts,
+            )
     except BootStepFailed:
         raise
     except DumpRecoveryFailed:
