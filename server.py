@@ -37,6 +37,7 @@ from auth import (
     load_security_config,
     verify_token,
 )
+from utils.config_load import load_elements as _load_merged_elements
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -268,10 +269,9 @@ def _save_settings(settings: dict) -> None:
 
 def _load_elements() -> dict:
     try:
-        with open(ELEMENTS_PATH, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        logger.warning("元素配置文件不存在: %s，使用默认配置", ELEMENTS_PATH)
+        return _load_merged_elements()
+    except Exception:
+        logger.exception("加载元素配置失败")
         return {}
 
 
@@ -457,6 +457,9 @@ async def api_account_check_config(data: dict = None):
             enabled=data.get("enabled"),
             interval_minutes=data.get("interval_minutes"),
             on_abnormal=data.get("on_abnormal"),
+            idle_after_invite_minutes=data.get("idle_after_invite_minutes"),
+            local_dir=data.get("local_dir"),
+            remote_dir=data.get("remote_dir"),
         )
         # 持久化到 settings.yaml
         try:
@@ -465,6 +468,11 @@ async def api_account_check_config(data: dict = None):
             ac["enabled"] = new_cfg["enabled"]
             ac["interval_minutes"] = new_cfg["interval_minutes"]
             ac["on_abnormal"] = new_cfg["on_abnormal"]
+            ac["idle_after_invite_minutes"] = new_cfg.get(
+                "idle_after_invite_minutes", 5
+            )
+            ac["local_dir"] = new_cfg.get("local_dir", "")
+            ac["remote_dir"] = new_cfg.get("remote_dir", "/sdcard/Download")
             _save_settings(s)
         except Exception:
             logger.exception("持久化 account_check 配置失败（运行时配置仍生效）")
@@ -488,6 +496,29 @@ async def api_account_check_trigger(data: dict = None):
             return {"ok": ok, "triggered": 1 if ok else 0}
         n = mgr.trigger_account_check_all()
         return {"ok": True, "triggered": n}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/low-greet-accounts")
+async def api_low_greet_accounts():
+    """招呼未达阈值的账号文件名列表（持久化，仅手动清空）。"""
+    try:
+        from data.low_greet_registry import list_entries
+
+        return {"entries": list_entries()}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/low-greet-accounts/clear")
+async def api_low_greet_accounts_clear():
+    """手动清空低招呼账号登记。"""
+    try:
+        from data.low_greet_registry import clear_all
+
+        removed = clear_all()
+        return {"ok": True, "removed": removed}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -552,11 +583,19 @@ async def api_dashboard():
             agents = get_router().snapshot()
         except Exception:
             logger.debug("读取 agent 快照失败", exc_info=True)
+        low_greet_accounts: List[Dict[str, Any]] = []
+        try:
+            from data.low_greet_registry import list_entries
+
+            low_greet_accounts = list_entries()
+        except Exception:
+            logger.debug("读取 low_greet_accounts 失败", exc_info=True)
         return {
             "devices": devices,
             "stats": stats,
             "account_check": account_check,
             "agents": agents,
+            "low_greet_accounts": low_greet_accounts,
         }
     except Exception as e:
         logger.exception("dashboard API 失败")
@@ -771,7 +810,7 @@ def _archive_and_clear_all_devices() -> None:
             return
         try:
             from data.storage import archive_and_clear_all
-            from core.message_pool import archive_and_clear_all_state
+            from data.storage import archive_and_clear_all_state
 
             res_friends = archive_and_clear_all()
             logger.info("friends 归档完成: %d 台设备", len(res_friends))

@@ -219,6 +219,47 @@ class StorageHandler:
     # ------------------------------------------------------------------
     # 公共 API（保持原签名）
     # ------------------------------------------------------------------
+    def _read_device_state_unlocked(self) -> Dict[str, Any]:
+        path = _device_state_path(self.serial)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            logging.exception("读取 device state 失败: %s", path)
+            return {}
+
+    def _write_device_state_unlocked(self, state: Dict[str, Any]) -> None:
+        path = _device_state_path(self.serial)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+
+    def get_device_state_flag(self, key: str, default: bool = False) -> bool:
+        """读取 per-device 状态标记（``data/state/<serial>.json``）。"""
+        with self._lock:
+            return bool(self._read_device_state_unlocked().get(key, default))
+
+    def set_device_state_flag(self, key: str, value: bool) -> None:
+        with self._lock:
+            state = self._read_device_state_unlocked()
+            state[key] = bool(value)
+            self._write_device_state_unlocked(state)
+
+    def get_device_state_field(self, key: str, default: Any = None) -> Any:
+        """读取 per-device 状态字段（任意 JSON 可序列化值）。"""
+        with self._lock:
+            return self._read_device_state_unlocked().get(key, default)
+
+    def set_device_state_field(self, key: str, value: Any) -> None:
+        with self._lock:
+            state = self._read_device_state_unlocked()
+            state[key] = value
+            self._write_device_state_unlocked(state)
+
     def get_all_friends(self) -> Dict[str, Dict[str, Any]]:
         with self._lock:
             return self._read_all()
@@ -449,3 +490,40 @@ def aggregate_count_by_status() -> Dict[str, int]:
         for k, v in sub.items():
             counters[k] = counters.get(k, 0) + int(v)
     return counters
+
+
+_STATE_DIR = os.path.join(_DATA_ROOT, "state")
+
+
+def _device_state_path(serial: str) -> str:
+    os.makedirs(_STATE_DIR, exist_ok=True)
+    return os.path.join(_STATE_DIR, f"{_sanitize_serial(serial)}.json")
+
+
+def archive_and_clear_all_state() -> Dict[str, Optional[str]]:
+    """扫描 ``data/state/`` 下所有 serial 文件并归档清零。"""
+    results: Dict[str, Optional[str]] = {}
+    if not os.path.isdir(_STATE_DIR):
+        return results
+    for name in os.listdir(_STATE_DIR):
+        if not name.endswith(".json"):
+            continue
+        serial = name[:-5]
+        path = os.path.join(_STATE_DIR, name)
+        try:
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            archived: Optional[str] = None
+            if os.path.exists(path) and os.path.getsize(path) > 2:
+                arc_dir = os.path.join(_DATA_ROOT, "archive", "state", serial)
+                os.makedirs(arc_dir, exist_ok=True)
+                archived = os.path.join(arc_dir, f"state.{ts}.json")
+                shutil.copy2(path, archived)
+            tmp = f"{path}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"reply_round": 0}, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+            results[serial] = archived
+        except Exception:
+            logging.exception("归档 state 失败: %s", path)
+            results[serial] = None
+    return results

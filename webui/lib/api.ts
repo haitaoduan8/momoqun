@@ -1,5 +1,5 @@
 /**
- * momoqun API 服务层
+ * 动态群 API 服务层
  * 连接后端 FastAPI 服务器 (http://localhost:5100)
  */
 
@@ -14,7 +14,6 @@ export class ApiAuthError extends Error {
   }
 }
 
-// 通用请求方法
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const response = await fetch(url, {
@@ -51,7 +50,6 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   if (response.ok) {
     return response.json();
   }
-  // 旧版 server 无此路由：从 master-address 读取鉴权状态，或视为未启用
   if (response.status === 404) {
     const fallback = await fetch(`${API_BASE}/api/master-address`);
     if (fallback.ok) {
@@ -66,7 +64,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   throw new Error(`API Error: ${response.status}`);
 }
 
-// ============ Master 地址（路线 C：下发给模拟器 Agent） ============
+// ============ Master 地址 ============
 
 export interface MasterAddress {
   addresses: string[];
@@ -80,7 +78,7 @@ export async function getMasterAddress(): Promise<MasterAddress> {
   return fetchAPI("/api/master-address");
 }
 
-// ============ 在线 Agent（路线 C WebSocket） ============
+// ============ 在线 Agent ============
 
 export interface OnlineAgent {
   serial: string;
@@ -125,7 +123,7 @@ export async function removeDevice(serial: string): Promise<{ ok: boolean; error
 }
 
 export async function deviceAction(
-  action: "start" | "stop" | "pause" | "resume" | "start_all" | "pause_all",
+  action: "start" | "stop" | "pause" | "resume" | "start_all" | "pause_all" | "stop_all",
   serial?: string
 ): Promise<{ ok: boolean; error?: string; started?: number }> {
   return fetchAPI(`/api/devices/${action}`, {
@@ -135,7 +133,6 @@ export async function deviceAction(
 }
 
 // ============ 统计数据 ============
-// 对应后端 /api/stats 返回结构
 
 export interface Stats {
   friends: Record<string, number>;
@@ -148,7 +145,7 @@ export async function getStats(): Promise<Stats> {
   return fetchAPI("/api/stats");
 }
 
-// ============ 聚合 Dashboard（设备 + 统计 + 账号检测 + Agent） ============
+// ============ 聚合 Dashboard ============
 
 export interface DashboardResponse {
   devices: Device[];
@@ -176,22 +173,43 @@ export async function getLogs(limit = 200): Promise<{ logs: LogEntry[] }> {
 
 // ============ 配置管理 ============
 
+export interface AccountBootConfig {
+  enabled?: boolean;
+  preset_address?: string;
+  dynamic_content?: string;
+  step_wait_s?: number;
+  post_publish_wait_s?: number;
+  clone_select_wait_s?: number;
+  post_dynamic_enabled?: boolean;
+  page_verify_retries?: number;
+  page_verify_poll_s?: number;
+  post_click_stable_s?: number;
+  allow_coord_fallback?: boolean;
+}
+
+export interface ApproveGreetingConfig {
+  first_batch_min_count?: number;
+  low_greet_wait_minutes?: number;
+}
+
+export interface AccountCheckConfig {
+  enabled?: boolean;
+  interval_minutes?: number;
+  idle_after_invite_minutes?: number;
+  local_dir?: string;
+  remote_dir?: string;
+  on_abnormal?: string;
+}
+
 export interface Config {
   group_name: string;
-  chat_rounds_before_follow: number;
-  max_chat_rounds: number;
   round_end_wait_s: number;
-  chat_round_wait_s: number;
   greet_scan_interval_s: number;
-  invite_back_message: string;
   max_consecutive_errors: number;
-  huiguan_message_round: number;
-  huiguan_enabled: boolean;
-  direct_group_mode: boolean;
-  reply_interval: { min: number; max: number };
-  chat_strategy: string;
   chat_ignore_names?: string[];
-  message_pools: Array<{ id: number; messages: string[] }>;
+  approve_greeting?: ApproveGreetingConfig;
+  account_check?: AccountCheckConfig;
+  account_boot?: AccountBootConfig;
   security?: {
     api_token?: string;
     allow_shell_exec?: boolean;
@@ -216,6 +234,11 @@ export interface AccountCheckStatus {
   config: {
     enabled: boolean;
     interval_minutes: number;
+    on_abnormal?: string;
+    idle_after_invite_minutes?: number;
+    local_dir?: string;
+    remote_dir?: string;
+    last_trigger_at?: number;
   };
   devices: Array<{
     serial: string;
@@ -231,6 +254,9 @@ export async function getAccountCheckStatus(): Promise<AccountCheckStatus> {
 export async function updateAccountCheckConfig(body: {
   enabled?: boolean;
   interval_minutes?: number;
+  idle_after_invite_minutes?: number;
+  local_dir?: string;
+  remote_dir?: string;
 }): Promise<{ ok: boolean; config?: any }> {
   return fetchAPI("/api/account-check/config", {
     method: "POST",
@@ -252,7 +278,24 @@ export async function dismissAccountCheck(serial: string): Promise<{ ok: boolean
   });
 }
 
-// ============ 初始化（ADB / Agent 配置 / 文件推送） ============
+// ============ 低招呼账号 ============
+
+export interface LowGreetEntry {
+  filename: string;
+  serial?: string;
+  device_name?: string;
+  reported_at: number;
+}
+
+export async function getLowGreetAccounts(): Promise<{ entries: LowGreetEntry[] }> {
+  return fetchAPI("/api/low-greet-accounts");
+}
+
+export async function clearLowGreetAccounts(): Promise<{ ok: boolean; removed?: number }> {
+  return fetchAPI("/api/low-greet-accounts/clear", { method: "POST" });
+}
+
+// ============ 初始化 ============
 
 export interface InitAdbDevice {
   adb_serial: string;

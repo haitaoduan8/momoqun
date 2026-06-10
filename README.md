@@ -1,6 +1,8 @@
-# momoqun
+# 动态群
 
 陌陌群控自动化：Master 控制面 + 模拟器 Agent + Web 控制台。
+
+主流程固定为：**通过招呼 → 邀请进指定群 → 拉黑**。
 
 ## 架构
 
@@ -11,7 +13,7 @@ Web UI (Next.js)  ──HTTP──►  server.py (FastAPI)
                                   │
                          agent-android (每台模拟器)
                                   │
-                         uiautomator2 / 截图 / 点击
+                         UI 自动化 RPC
 ```
 
 - **Master**：本仓库 `server.py`，负责设备调度、配置、日志与统计。
@@ -54,9 +56,10 @@ python server.py
 | `security.api_token` | 非空启用 HTTP / WebSocket 鉴权 |
 | `security.allow_shell_exec` | 是否允许 Agent 反向 `shell_exec`（默认关闭） |
 | `security.heartbeat_timeout_sec` | Agent 心跳超时断开（秒） |
-| `message_pools` | 多轮聊天话术池 |
+| `group_name` | 目标群聊名称 |
+| `greet_scan_interval_s` | 招呼扫描间隔 |
+| `round_end_wait_s` | 每轮结束等待秒数 |
 | `chat_ignore_names` | 聊天列表忽略的系统会话名 |
-| `direct_group_mode` | 直接拉群模式（跳过聊天/关注） |
 
 环境变量：`MOMOQUN_API_TOKEN` 可覆盖 YAML 中的 `api_token`。
 
@@ -100,7 +103,8 @@ Release CI 见 `.github/workflows/`。
 ├── device_manager.py   # 多设备调度
 ├── agent_router.py     # Agent WebSocket 路由
 ├── auth.py             # API / WS 鉴权
-├── core/               # 自动化流水线（招呼、聊天、拉群等）
+├── core/               # 自动化流水线（招呼、拉群）
+├── legacy/             # 已废弃的聊天/关注相关模块
 ├── config/             # settings.yaml、UI 元素定位
 ├── webui/              # Next.js 控制台
 ├── agent-android/      # 模拟器 Agent APK

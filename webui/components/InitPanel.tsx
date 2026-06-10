@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   deployAgentInit,
   getAgents,
+  getConfig,
   getMasterAddress,
   listInitDevices,
   previewPushBatch,
@@ -107,6 +108,14 @@ export function InitPanel() {
       .catch((e) => {
         if (alive) setMasterErr(e instanceof Error ? e.message : "获取 Master 地址失败");
       });
+    getConfig()
+      .then((cfg) => {
+        if (!alive) return;
+        const ac = cfg.account_check || {};
+        if (ac.local_dir) setLocalDir(ac.local_dir);
+        if (ac.remote_dir) setRemoteDir(ac.remote_dir);
+      })
+      .catch(() => {});
     refreshDevices();
     refreshAgents();
     return () => {

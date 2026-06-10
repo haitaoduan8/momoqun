@@ -32,9 +32,9 @@ function Logo() {
   return (
     <div className="flex items-center gap-3">
       <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-lg shadow-accent/20">
-        <span className="text-black font-bold text-lg">M</span>
+        <span className="text-black font-bold text-lg">动</span>
       </div>
-      <span className="text-xl font-bold text-white">momoqun</span>
+      <span className="text-xl font-bold text-white">动态群</span>
     </div>
   );
 }
@@ -89,7 +89,7 @@ function Sidebar({
             {!isCollapsed && <Logo />}
             {isCollapsed && (
               <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-lg shadow-accent/20">
-                <span className="text-black font-bold text-lg">M</span>
+                <span className="text-black font-bold text-lg">动</span>
               </div>
             )}
             <button

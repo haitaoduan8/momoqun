@@ -15,16 +15,25 @@ object TypeTextHandler {
 
         // 优先走 MomoQunIME（支持中文等任意 Unicode）
         val ime = MomoQunIME.INSTANCE
-        if (ime != null && ime.isVisible()) {
+        if (ime != null) {
             val ok = ime.commitTextToInput(text)
             if (ok) {
                 Log.d(TAG, "commitText OK (${text.length} chars)")
                 return JSONObject().put("ok", true)
             }
-            Log.w(TAG, "commitText failed, falling back to input text")
+            Log.w(TAG, "commitText failed (no InputConnection?)")
+        } else {
+            Log.w(TAG, "MomoQunIME INSTANCE null")
         }
 
-        // 回退：shell input text（仅支持 ASCII）
+        // 非 ASCII 不能走 shell input text
+        if (text.any { it.code > 127 }) {
+            throw RpcError(
+                -32603,
+                "MomoQunIME commit failed for non-ASCII; ensure input focused and momoqun-ime selected",
+            )
+        }
+
         val escaped = text.replace("'", "'\\''")
         val ok = ShellHelper.execOk("input text '$escaped'")
         if (!ok) throw RpcError(-32603, "text input failed")

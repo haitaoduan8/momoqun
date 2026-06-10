@@ -83,6 +83,29 @@ def list_devices() -> List[Dict[str, str]]:
     return devices
 
 
+def launch_app(adb_serial: str, package: str, activity: str = "") -> Tuple[str, str, int]:
+    """启动应用。未指定 activity 时使用 monkey 拉起主界面。"""
+    if activity:
+        return run_adb(
+            ["-s", adb_serial, "shell", "am", "start", "-n", f"{package}/{activity}"],
+            timeout=15,
+        )
+    return run_adb(
+        [
+            "-s",
+            adb_serial,
+            "shell",
+            "monkey",
+            "-p",
+            package,
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "1",
+        ],
+        timeout=15,
+    )
+
+
 def list_online_serials() -> List[str]:
     return [d["adb_serial"] for d in list_devices() if d.get("state") == "device"]
 
@@ -109,6 +132,24 @@ def push_file_to_device(
     if rc == 0:
         return True, ""
     return False, (stderr or "push 失败").strip()
+
+
+def clear_remote_dir(adb_serial: str, remote_dir: str) -> Tuple[bool, str]:
+    """删除模拟器目标目录内的所有文件（不删目录本身）。"""
+    rd = (remote_dir or "").strip().rstrip("/")
+    if not rd:
+        return False, "remote_dir 为空"
+    try:
+        _, stderr, rc = run_adb(
+            ["-s", adb_serial, "shell", "rm", "-f", f"{rd}/*"],
+            timeout=60,
+        )
+        if rc != 0:
+            return False, (stderr or "rm 失败").strip()
+        return True, ""
+    except Exception as exc:
+        logger.exception("clear_remote_dir 异常 serial=%s", adb_serial)
+        return False, str(exc)
 
 
 def push_single_replace(

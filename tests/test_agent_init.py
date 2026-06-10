@@ -7,6 +7,7 @@ from ops.agent_init import (
     CONFIG_ACTION,
     CONFIG_RECEIVER,
     adb_serial_to_agent_serial,
+    agent_serial_to_adb_serial,
     build_set_config_command,
     deploy_agent_config,
     deploy_many,
@@ -22,6 +23,12 @@ class AdbSerialMappingTests(unittest.TestCase):
 
     def test_already_normalized(self) -> None:
         self.assertEqual(adb_serial_to_agent_serial("127.0.0.1_5555"), "127.0.0.1_5555")
+
+    def test_agent_to_adb_colon(self) -> None:
+        self.assertEqual(agent_serial_to_adb_serial("127.0.0.1_5555"), "127.0.0.1:5555")
+
+    def test_agent_to_adb_emulator(self) -> None:
+        self.assertEqual(agent_serial_to_adb_serial("emulator-5554"), "emulator-5554")
 
 
 class BuildSetConfigCommandTests(unittest.TestCase):

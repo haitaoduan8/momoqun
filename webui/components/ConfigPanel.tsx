@@ -9,59 +9,63 @@ import {
   Loader2,
   MessageSquare,
   Clock,
-  Zap,
   Shield,
-  Plus,
-  Trash2,
   CheckCircle2,
   AlertCircle,
+  Rocket,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { LowGreetPanel } from "@/components/LowGreetPanel";
 
 type FormState = {
   group_name: string;
-  chat_rounds_before_follow: number;
-  max_chat_rounds: number;
   round_end_wait_s: number;
-  chat_round_wait_s: number;
   greet_scan_interval_s: number;
-  invite_back_message: string;
   max_consecutive_errors: number;
-  huiguan_message_round: number;
-  huiguan_enabled: boolean;
-  direct_group_mode: boolean;
-  reply_interval_min: number;
-  reply_interval_max: number;
   chat_ignore_names_text: string;
+  account_boot_enabled: boolean;
+  preset_address: string;
+  dynamic_content: string;
+  post_dynamic_enabled: boolean;
+  account_boot_step_wait_s: number;
+  page_verify_retries: number;
+  page_verify_poll_s: number;
+  post_click_stable_s: number;
+  allow_coord_fallback: boolean;
+  clone_select_wait_s: number;
+  post_publish_wait_s: number;
+  first_batch_min_count: number;
+  low_greet_wait_minutes: number;
   api_token: string;
   allow_shell_exec: boolean;
   heartbeat_timeout_sec: number;
-  message_pools: Array<{ id: number; messages: string[] }>;
 };
 
 function configToForm(config: Config): FormState {
+  const boot = config.account_boot || {};
+  const greet = config.approve_greeting || {};
   return {
     group_name: config.group_name || "",
-    chat_rounds_before_follow: config.chat_rounds_before_follow || 3,
-    max_chat_rounds: config.max_chat_rounds || 10,
     round_end_wait_s: config.round_end_wait_s || 10,
-    chat_round_wait_s: config.chat_round_wait_s || 30,
     greet_scan_interval_s: config.greet_scan_interval_s || 5,
-    invite_back_message: config.invite_back_message || "",
     max_consecutive_errors: config.max_consecutive_errors || 5,
-    huiguan_message_round: config.huiguan_message_round || 3,
-    huiguan_enabled: config.huiguan_enabled || false,
-    direct_group_mode: config.direct_group_mode ?? false,
-    reply_interval_min: config.reply_interval?.min ?? 1,
-    reply_interval_max: config.reply_interval?.max ?? 3,
     chat_ignore_names_text: (config.chat_ignore_names || []).join("\n"),
+    account_boot_enabled: boot.enabled ?? true,
+    preset_address: boot.preset_address || "",
+    dynamic_content: boot.dynamic_content || "",
+    post_dynamic_enabled: boot.post_dynamic_enabled ?? true,
+    account_boot_step_wait_s: boot.step_wait_s ?? 1.5,
+    page_verify_retries: boot.page_verify_retries ?? 12,
+    page_verify_poll_s: boot.page_verify_poll_s ?? 1.0,
+    post_click_stable_s: boot.post_click_stable_s ?? 2.0,
+    allow_coord_fallback: boot.allow_coord_fallback ?? true,
+    clone_select_wait_s: boot.clone_select_wait_s ?? 2,
+    post_publish_wait_s: boot.post_publish_wait_s ?? 2,
+    first_batch_min_count: greet.first_batch_min_count ?? 3,
+    low_greet_wait_minutes: greet.low_greet_wait_minutes ?? 5,
     api_token: config.security?.api_token || "",
     allow_shell_exec: config.security?.allow_shell_exec ?? false,
     heartbeat_timeout_sec: config.security?.heartbeat_timeout_sec ?? 30,
-    message_pools: (config.message_pools || []).map((p) => ({
-      id: p.id,
-      messages: [...(p.messages || [])],
-    })),
   };
 }
 
@@ -73,25 +77,27 @@ function formToPatch(form: FormState): Partial<Config> {
 
   return {
     group_name: form.group_name,
-    chat_rounds_before_follow: form.chat_rounds_before_follow,
-    max_chat_rounds: form.max_chat_rounds,
     round_end_wait_s: form.round_end_wait_s,
-    chat_round_wait_s: form.chat_round_wait_s,
     greet_scan_interval_s: form.greet_scan_interval_s,
-    invite_back_message: form.invite_back_message,
     max_consecutive_errors: form.max_consecutive_errors,
-    huiguan_message_round: form.huiguan_message_round,
-    huiguan_enabled: form.huiguan_enabled,
-    direct_group_mode: form.direct_group_mode,
-    reply_interval: {
-      min: form.reply_interval_min,
-      max: form.reply_interval_max,
-    },
     chat_ignore_names: ignoreNames,
-    message_pools: form.message_pools.map((p) => ({
-      id: p.id,
-      messages: p.messages.filter((m) => m.trim()),
-    })),
+    account_boot: {
+      enabled: form.account_boot_enabled,
+      preset_address: form.preset_address.trim(),
+      dynamic_content: form.dynamic_content.trim(),
+      post_dynamic_enabled: form.post_dynamic_enabled,
+      step_wait_s: form.account_boot_step_wait_s,
+      page_verify_retries: form.page_verify_retries,
+      page_verify_poll_s: form.page_verify_poll_s,
+      post_click_stable_s: form.post_click_stable_s,
+      allow_coord_fallback: form.allow_coord_fallback,
+      clone_select_wait_s: form.clone_select_wait_s,
+      post_publish_wait_s: form.post_publish_wait_s,
+    },
+    approve_greeting: {
+      first_batch_min_count: form.first_batch_min_count,
+      low_greet_wait_minutes: form.low_greet_wait_minutes,
+    },
     security: {
       api_token: form.api_token,
       allow_shell_exec: form.allow_shell_exec,
@@ -137,37 +143,6 @@ export function ConfigPanel() {
     }
   };
 
-  const updatePoolMessage = (poolIndex: number, msgIndex: number, value: string) => {
-    if (!formData) return;
-    const pools = formData.message_pools.map((p, pi) =>
-      pi === poolIndex
-        ? {
-            ...p,
-            messages: p.messages.map((m, mi) => (mi === msgIndex ? value : m)),
-          }
-        : p
-    );
-    setFormData({ ...formData, message_pools: pools });
-  };
-
-  const addPoolMessage = (poolIndex: number) => {
-    if (!formData) return;
-    const pools = formData.message_pools.map((p, pi) =>
-      pi === poolIndex ? { ...p, messages: [...p.messages, ""] } : p
-    );
-    setFormData({ ...formData, message_pools: pools });
-  };
-
-  const removePoolMessage = (poolIndex: number, msgIndex: number) => {
-    if (!formData) return;
-    const pools = formData.message_pools.map((p, pi) =>
-      pi === poolIndex
-        ? { ...p, messages: p.messages.filter((_, mi) => mi !== msgIndex) }
-        : p
-    );
-    setFormData({ ...formData, message_pools: pools });
-  };
-
   if (loading || !formData) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -195,7 +170,6 @@ export function ConfigPanel() {
         </div>
       )}
 
-      {/* 安全设置 */}
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -259,35 +233,285 @@ export function ConfigPanel() {
         </CardContent>
       </Card>
 
-      {/* 群聊设置 */}
+      <Card className="border-glow">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="w-5 h-5 text-accent" />
+            自动上号
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            设备启动时执行一次（假定已在桌面）。每一步点击前 dump 并校验页面，通过后才点击；任一步点击失败（含重试耗尽）会立即暂停设备，并在控制台显示「上号失败 [步骤]: 原因」，不会继续发动态或招呼。含拖走红点；账号异常换号后会自动重新上号。
+          </p>
+          <div className="p-3 rounded-lg bg-accent/5 border border-accent/10 text-xs text-muted-foreground space-y-1">
+            <p>日志关键字：<span className="text-accent">【点击前 dump】</span> → <span className="text-accent">【页面OK】</span> → <span className="text-accent">【点击】</span> → <span className="text-accent">【点击后等待】</span></p>
+            <p>失败时：<span className="text-red-400">【点击失败】</span> / <span className="text-red-400">【元素未找到】</span>，设备卡片会显示暂停原因。</p>
+            <p>页面看起来正常却找不到元素，常见原因是控件用 text 显示但配置只写了 contentDesc；现已同时匹配 text/contentDesc。</p>
+            <p>页面校验通过但元素仍未命中时，可启用坐标兜底（日志会打 <span className="text-accent">【坐标兜底】</span>）。</p>
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
+            <div>
+              <p className="font-medium text-white text-sm">启用自动上号</p>
+              <p className="text-xs text-muted-foreground">关闭后启动设备时不会自动上号</p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData({
+                  ...formData,
+                  account_boot_enabled: !formData.account_boot_enabled,
+                })
+              }
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                formData.account_boot_enabled ? "bg-neon-green" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  formData.account_boot_enabled ? "translate-x-7" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground">预设地址（位置模拟输入）</label>
+            <input
+              type="text"
+              value={formData.preset_address}
+              onChange={(e) => setFormData({ ...formData, preset_address: e.target.value })}
+              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              placeholder="例如：济南市历下区泉城路"
+            />
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
+            <div>
+              <p className="font-medium text-white text-sm">发动态</p>
+              <p className="text-xs text-muted-foreground">上号后：更多 → 发动态 → 发布 → 消息</p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData({
+                  ...formData,
+                  post_dynamic_enabled: !formData.post_dynamic_enabled,
+                })
+              }
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                formData.post_dynamic_enabled ? "bg-neon-green" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  formData.post_dynamic_enabled ? "translate-x-7" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground">动态文案</label>
+            <textarea
+              value={formData.dynamic_content}
+              onChange={(e) => setFormData({ ...formData, dynamic_content: e.target.value })}
+              rows={3}
+              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 text-sm"
+              placeholder="发动态时自动填入的文案"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground">步骤间隔（秒）</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.5"
+                value={formData.account_boot_step_wait_s}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    account_boot_step_wait_s: parseFloat(e.target.value) || 1.5,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">一键切换后等待（秒）</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={formData.clone_select_wait_s}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    clone_select_wait_s: parseFloat(e.target.value) || 2,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">点文件号 → 弹窗点一键切换后，等待环境切换完成</p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">发布动态后等待（秒）</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={formData.post_publish_wait_s}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    post_publish_wait_s: parseFloat(e.target.value) || 2,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground">页面校验重试次数</label>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={formData.page_verify_retries}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    page_verify_retries: parseInt(e.target.value, 10) || 12,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">每次点击前 dump，未就绪则重试</p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">页面校验间隔（秒）</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.2"
+                value={formData.page_verify_poll_s}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    page_verify_poll_s: parseFloat(e.target.value) || 1,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">点击后稳定等待（秒）</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.5"
+                value={formData.post_click_stable_s}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    post_click_stable_s: parseFloat(e.target.value) || 2,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">点击完成后 wait_ui_stable 上限</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
+            <div>
+              <p className="font-medium text-white text-sm">坐标点击兜底</p>
+              <p className="text-xs text-muted-foreground">
+                页面校验通过、元素未命中时使用 elements 中配置的 x/y 坐标点击
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData({
+                  ...formData,
+                  allow_coord_fallback: !formData.allow_coord_fallback,
+                })
+              }
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                formData.allow_coord_fallback ? "bg-neon-green" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  formData.allow_coord_fallback ? "translate-x-7" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-accent" />
-            群聊设置
+            拉群设置
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            首批：招呼数达阈值 → 全部通过 → 一次性批量邀请进群 → 回消息页监测招呼；之后有招呼即通过并拉群
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground">
+                首批招呼阈值（仅第一次生效）
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={formData.first_batch_min_count}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    first_batch_min_count: parseInt(e.target.value, 10) || 1,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                招呼数达到此值才开始通过并拉群
+              </p>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">
+                低招呼登记等待（分钟）
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={formData.low_greet_wait_minutes}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    low_greet_wait_minutes: parseFloat(e.target.value) || 5,
+                  })
+                }
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                发完动态后满此时间仍低于阈值，登记号文件名到下方列表
+              </p>
+            </div>
+          </div>
+          <LowGreetPanel />
           <div>
-            <label className="text-sm text-muted-foreground">群聊名称</label>
+            <label className="text-sm text-muted-foreground">目标群聊名称</label>
             <input
               type="text"
               value={formData.group_name}
               onChange={(e) => setFormData({ ...formData, group_name: e.target.value })}
               className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
               placeholder="输入群聊名称"
-            />
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">回关邀请话术</label>
-            <input
-              type="text"
-              value={formData.invite_back_message}
-              onChange={(e) =>
-                setFormData({ ...formData, invite_back_message: e.target.value })
-              }
-              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              placeholder="输入邀请话术"
             />
           </div>
           <div>
@@ -305,184 +529,15 @@ export function ConfigPanel() {
         </CardContent>
       </Card>
 
-      {/* 直接拉群模式 */}
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-accent" />
-            运行模式
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
-            <div>
-              <p className="font-medium text-white">直接拉群模式</p>
-              <p className="text-sm text-muted-foreground">
-                开启后仅通过招呼→邀请进群→拉黑，跳过聊天和关注环节
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                setFormData({
-                  ...formData,
-                  direct_group_mode: !formData.direct_group_mode,
-                })
-              }
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                formData.direct_group_mode ? "bg-accent" : "bg-gray-600"
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  formData.direct_group_mode ? "translate-x-7" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 回关邀请设置 */}
-      <Card
-        className={`border-glow ${formData.direct_group_mode ? "opacity-50 pointer-events-none" : ""}`}
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-accent" />
-            回关邀请设置
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
-            <div>
-              <p className="font-medium text-white">发送回关邀请话术</p>
-              <p className="text-sm text-muted-foreground">
-                开启后达到指定轮数发送回关邀请，关闭后正常按消息池对话
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                setFormData({ ...formData, huiguan_enabled: !formData.huiguan_enabled })
-              }
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                formData.huiguan_enabled ? "bg-accent" : "bg-gray-600"
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  formData.huiguan_enabled ? "translate-x-7" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">第几轮发送回关邀请</label>
-            <input
-              type="number"
-              value={formData.huiguan_message_round}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  huiguan_message_round: parseInt(e.target.value, 10) || 0,
-                })
-              }
-              disabled={!formData.huiguan_enabled}
-              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 disabled:opacity-50"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 消息池 */}
-      <Card
-        className={`border-glow ${formData.direct_group_mode ? "opacity-50 pointer-events-none" : ""}`}
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-accent" />
-            消息池
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {formData.message_pools.map((pool, poolIndex) => (
-            <div
-              key={pool.id}
-              className="p-4 rounded-lg bg-bg-card border border-accent/6 space-y-2"
-            >
-              <p className="text-sm font-medium text-white">第 {pool.id} 轮话术</p>
-              {pool.messages.map((msg, msgIndex) => (
-                <div key={msgIndex} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={msg}
-                    onChange={(e) => updatePoolMessage(poolIndex, msgIndex, e.target.value)}
-                    className="flex-1 px-3 py-2 bg-bg-input border border-accent/6 rounded-lg text-white text-sm focus:outline-none focus:border-accent/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePoolMessage(poolIndex, msgIndex)}
-                    className="p-2 text-neon-red hover:bg-neon-red/10 rounded-lg"
-                    title="删除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => addPoolMessage(poolIndex)}
-                className="flex items-center gap-1 text-xs text-accent hover:underline"
-              >
-                <Plus className="w-3 h-3" />
-                添加话术
-              </button>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* 聊天参数 */}
-      <Card
-        className={`border-glow ${formData.direct_group_mode ? "opacity-50 pointer-events-none" : ""}`}
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-accent" />
-            聊天参数
+            运行参数
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm text-muted-foreground">聊N轮后关注</label>
-              <input
-                type="number"
-                value={formData.chat_rounds_before_follow}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    chat_rounds_before_follow: parseInt(e.target.value, 10) || 0,
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground">最大聊天轮数</label>
-              <input
-                type="number"
-                value={formData.max_chat_rounds}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    max_chat_rounds: parseInt(e.target.value, 10) || 0,
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              />
-            </div>
             <div>
               <label className="text-sm text-muted-foreground">最大连续错误</label>
               <input
@@ -497,41 +552,10 @@ export function ConfigPanel() {
                 className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
               />
             </div>
-            <div>
-              <label className="text-sm text-muted-foreground">回复间隔最小（秒）</label>
-              <input
-                type="number"
-                step="0.1"
-                value={formData.reply_interval_min}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    reply_interval_min: parseFloat(e.target.value) || 0,
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground">回复间隔最大（秒）</label>
-              <input
-                type="number"
-                step="0.1"
-                value={formData.reply_interval_max}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    reply_interval_max: parseFloat(e.target.value) || 0,
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              />
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 时间参数 */}
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -550,20 +574,6 @@ export function ConfigPanel() {
                   setFormData({
                     ...formData,
                     round_end_wait_s: parseFloat(e.target.value) || 0,
-                  })
-                }
-                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground">回复等待(秒)</label>
-              <input
-                type="number"
-                value={formData.chat_round_wait_s}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    chat_round_wait_s: parseFloat(e.target.value) || 0,
                   })
                 }
                 className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"

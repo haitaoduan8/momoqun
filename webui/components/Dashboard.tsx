@@ -16,6 +16,7 @@ import {
   Activity,
   Play,
   Pause,
+  Square,
   Trash2,
   RefreshCw,
   AlertTriangle,
@@ -41,6 +42,7 @@ function DeviceCard({
   statusHint,
   onStart,
   onPause,
+  onStop,
   onRemove,
 }: {
   name: string;
@@ -51,6 +53,7 @@ function DeviceCard({
   statusHint?: string;
   onStart: () => void | Promise<void>;
   onPause: () => void | Promise<void>;
+  onStop: () => void | Promise<void>;
   onRemove: () => void | Promise<void>;
 }) {
   const [loading, setLoading] = useState<string | null>(null);
@@ -132,7 +135,7 @@ function DeviceCard({
           ) : (
             <button
               onClick={() => handleAction("start", onStart)}
-              disabled={loading !== null}
+              disabled={loading !== null || status === "waiting_agent"}
               className="flex-1 flex items-center justify-center gap-2 py-2 bg-neon-green/10 text-neon-green rounded-lg hover:bg-neon-green/20 transition-colors disabled:opacity-50"
             >
               {loading === "start" ? (
@@ -140,7 +143,24 @@ function DeviceCard({
               ) : (
                 <Play className="w-4 h-4" />
               )}
-              <span className="text-sm font-medium">开始</span>
+              <span className="text-sm font-medium">
+                {status === "paused" ? "继续" : "开始"}
+              </span>
+            </button>
+          )}
+          {(status === "running" || status === "paused") && (
+            <button
+              onClick={() => handleAction("stop", onStop)}
+              disabled={loading !== null}
+              title="停止线程，再次开始将重新上号"
+              className="flex items-center justify-center gap-2 py-2 px-3 bg-gray-500/10 text-gray-300 rounded-lg hover:bg-gray-500/20 transition-colors disabled:opacity-50"
+            >
+              {loading === "stop" ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              <span className="text-sm font-medium">停止</span>
             </button>
           )}
           <button
@@ -193,9 +213,9 @@ export function Dashboard({
   loading: devicesLoading,
   refresh,
 }: DashboardViewProps) {
-  const [bulkAction, setBulkAction] = useState<"start_all" | "pause_all" | null>(
-    null
-  );
+  const [bulkAction, setBulkAction] = useState<
+    "start_all" | "pause_all" | "stop_all" | null
+  >(null);
 
   const handleStart = async (serial: string) => {
     await deviceAction("start", serial);
@@ -212,6 +232,11 @@ export function Dashboard({
     await refresh();
   };
 
+  const handleStop = async (serial: string) => {
+    await deviceAction("stop", serial);
+    await refresh();
+  };
+
   const handleRemove = async (serial: string) => {
     await removeDevice(serial);
     await refresh();
@@ -222,7 +247,9 @@ export function Dashboard({
     await refresh();
   };
 
-  const handleBulkAction = async (action: "start_all" | "pause_all") => {
+  const handleBulkAction = async (
+    action: "start_all" | "pause_all" | "stop_all"
+  ) => {
     setBulkAction(action);
     try {
       await deviceAction(action);
@@ -299,6 +326,18 @@ export function Dashboard({
               )}
               全部暂停
             </button>
+            <button
+              onClick={() => handleBulkAction("stop_all")}
+              disabled={bulkAction !== null || totalDevices === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-500/10 text-gray-300 rounded-lg hover:bg-gray-500/20 transition-colors disabled:opacity-40"
+            >
+              {bulkAction === "stop_all" ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Square className="w-3.5 h-3.5" />
+              )}
+              全部停止
+            </button>
           </div>
         </div>
 
@@ -350,6 +389,7 @@ export function Dashboard({
                       : handleStart(device.serial)
                   }
                   onPause={() => handlePause(device.serial)}
+                  onStop={() => handleStop(device.serial)}
                   onRemove={() => handleRemove(device.serial)}
                 />
               );

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hierarchy rotation="0">
+<node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2400]">
+<node index="0" text="" resource-id="" class="android.widget.LinearLayout" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,2352]">
+<node index="0" text="" resource-id="android:id/content" class="android.widget.FrameLayout" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2352]">
+<node index="0" text="" resource-id="com.miui.miuibbs:id/kotlin" class="android.widget.RelativeLayout" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2352]">
+<node index="0" text="" resource-id="" class="android.webkit.WebView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2352]">
+<node index="0" text="V8" resource-id="" class="android.webkit.WebView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="true" focused="true" scrollable="true" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2353]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2353]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,220]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[45,138][183,192]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc=" 刷新" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[45,138][163,192]">
+<node index="0" text=" 刷新" resource-id="" class="android.widget.TextView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[45,143][163,184]"/>
+</node>
+</node>
+<node index="1" text="[MOMO陌陌]分身切换" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[224,110][857,212]"/>
+<node index="2" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[877,138][1043,192]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[898,131][961,199]">
+<node index="0" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[898,138][961,192]">
+<node index="0" text="" resource-id="" class="android.widget.TextView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[898,131][961,199]"/>
+</node>
+</node>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[979,138][1043,192]">
+<node index="0" text="" resource-id="" class="android.widget.TextView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[979,131][1043,199]"/>
+</node>
+</node>
+</node>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,220][1080,620]">
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,307][1080,393]">
+<node index="0" text="当前环境id:" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[38,319][341,381]"/>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[428,319][1043,381]">
+</node>
+</node>
+<node index="2" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,393][1080,480]">
+<node index="0" text="当前环境备注:" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[38,406][341,467]"/>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[428,406][1043,467]">
+<node index="0" text="" resource-id="vux-x-input-3dgj1" class="android.widget.EditText" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[428,406][1043,467]"/>
+</node>
+</node>
+<node index="3" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,480][1080,620]">
+<node index="0" text="打开 " resource-id="" class="android.widget.Button" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[377,493][701,608]"/>
+<node index="1" text=" 一键保存" resource-id="" class="android.widget.Button" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[719,493][1043,608]"/>
+</node>
+</node>
+<node index="2" text="检测到3个MOMO陌陌分身." resource-id="" class="android.widget.TextView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,618][1080,694]"/>
+<node index="3" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,692][1080,2179]">
+<node index="2" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="1164460606" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[538,692][811,919]">
+<node index="0" text="wD47NuHhJiyqwAAAABJRU5ErkJggg==" resource-id="" class="android.widget.Image" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[637,722][732,817]"/>
+<node index="1" text="1164460606" resource-id="" class="android.widget.TextView" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[563,824][785,868]"/>
+</node>
+</node>
+</node>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,2207][1080,2353]">
+</node>
+<node index="2" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="javascript:void(0)" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1080,2353]"/>
+</node>
+</node>
+</node>
+<node index="1" text="" resource-id="" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,103][1,104]"/>
+</node>
+</node>
+<node index="1" text="" resource-id="android:id/statusBarBackground" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,103]"/>
+<node index="2" text="" resource-id="android:id/navigationBarBackground" class="android.view.View" package="com.miui.miuibbs" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,2352][1080,2400]"/>
+</node>
+</hierarchy>

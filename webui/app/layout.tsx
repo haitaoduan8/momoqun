@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "momoqun - Neon Aurora Control Center",
-  description: "现代化控制面板，带 3D 机器人和鼠标光影效果",
+  title: "动态群 - 群控控制台",
+  description: "陌陌群控：招呼通过 → 拉群 → 拉黑",
 };
 
 export default function RootLayout({

@@ -3,13 +3,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAccountCheck } from "@/lib/hooks";
 import { updateAccountCheckConfig, triggerAccountCheck, dismissAccountCheck } from "@/lib/api";
-import { Shield, AlertTriangle, CheckCircle, Loader2, Play } from "lucide-react";
-import { useState } from "react";
+import { Shield, AlertTriangle, CheckCircle, Loader2, Play, Save, FolderOpen } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function AccountCheckPanel() {
   const { status, loading, refresh } = useAccountCheck();
   const [updating, setUpdating] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [idleMinutes, setIdleMinutes] = useState(5);
+  const [localDir, setLocalDir] = useState("");
+  const [remoteDir, setRemoteDir] = useState("/sdcard/Download");
+
+  useEffect(() => {
+    if (!status?.config) return;
+    setIdleMinutes(status.config.idle_after_invite_minutes ?? 5);
+    setLocalDir(status.config.local_dir ?? "");
+    setRemoteDir(status.config.remote_dir ?? "/sdcard/Download");
+  }, [status?.config]);
 
   const abnormalAccounts =
     status?.devices.filter((d) =>
@@ -30,6 +40,20 @@ export function AccountCheckPanel() {
     setUpdating(true);
     try {
       await updateAccountCheckConfig({ interval_minutes: minutes });
+      refresh();
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSaveSwapConfig = async () => {
+    setUpdating(true);
+    try {
+      await updateAccountCheckConfig({
+        idle_after_invite_minutes: idleMinutes,
+        local_dir: localDir.trim(),
+        remote_dir: remoteDir.trim() || "/sdcard/Download",
+      });
       refresh();
     } finally {
       setUpdating(false);
@@ -61,7 +85,6 @@ export function AccountCheckPanel() {
 
   return (
     <div className="space-y-6">
-      {/* 配置卡片 */}
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -70,11 +93,10 @@ export function AccountCheckPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* 启用开关 */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-white">启用自动检测</p>
-              <p className="text-sm text-muted-foreground">定期自动检测账号状态</p>
+              <p className="font-medium text-white">启用定时检测</p>
+              <p className="text-sm text-muted-foreground">按周期自动检测账号状态（与下方空闲检测独立）</p>
             </div>
             <button
               onClick={() => handleToggle(!status?.config.enabled)}
@@ -91,9 +113,8 @@ export function AccountCheckPanel() {
             </button>
           </div>
 
-          {/* 检测周期 */}
           <div>
-            <label className="text-sm text-muted-foreground">检测周期</label>
+            <label className="text-sm text-muted-foreground">定时检测周期</label>
             <div className="grid grid-cols-4 gap-2 mt-2">
               {[15, 30, 60, 120].map((minutes) => (
                 <button
@@ -112,7 +133,51 @@ export function AccountCheckPanel() {
             </div>
           </div>
 
-          {/* 立即检测 */}
+          <div className="pt-2 border-t border-accent/10 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              邀请进群后：若连续无招呼达到下方分钟数，则检测是否违规；正常则继续等招呼，违规则清空模拟器目录并从未使用过的本地文件换号（多机共享记录）。
+            </p>
+            <div>
+              <label className="text-sm text-muted-foreground">无招呼触发检测（分钟）</label>
+              <input
+                type="number"
+                min={1}
+                value={idleMinutes}
+                onChange={(e) => setIdleMinutes(parseFloat(e.target.value) || 5)}
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground flex items-center gap-1">
+                <FolderOpen className="w-4 h-4" /> 本地文件夹（Master 宿主机路径）
+              </label>
+              <input
+                type="text"
+                value={localDir}
+                onChange={(e) => setLocalDir(e.target.value)}
+                placeholder="D:\accounts\pool"
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">模拟器目标目录</label>
+              <input
+                type="text"
+                value={remoteDir}
+                onChange={(e) => setRemoteDir(e.target.value)}
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 font-mono text-sm"
+              />
+            </div>
+            <button
+              onClick={handleSaveSwapConfig}
+              disabled={updating}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent/10 text-accent rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
+            >
+              {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              保存换号与空闲检测配置
+            </button>
+          </div>
+
           <button
             onClick={handleTrigger}
             disabled={triggering}
@@ -128,7 +193,6 @@ export function AccountCheckPanel() {
         </CardContent>
       </Card>
 
-      {/* 异常账号列表 */}
       <Card className="border-glow">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

@@ -248,3 +248,20 @@ def go_back_to_chat_list(
             log.info("open 消息 tab 后已回到主聊天列表")
             return True
     return False
+
+
+def ensure_on_chat_list(
+    driver: Any,
+    elements: dict,
+    *,
+    max_backs: int = 5,
+    logger: Optional[logging.Logger] = None,
+    serial: Optional[str] = None,
+) -> None:
+    """归位到主聊天列表；失败时尝试打开消息 tab。"""
+    log = logger or logging.getLogger("navigator")
+    if go_back_to_chat_list(
+        driver, elements, max_backs=max_backs, logger=log, serial=serial
+    ):
+        return
+    try_open_chat_tab(driver, elements, log)

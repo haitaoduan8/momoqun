@@ -120,9 +120,8 @@ def chat_mutual_friend_config(elements):
 def approve_greeting_config(settings, elements):
     """聚合「通过打招呼」模块需要的字段。
 
-    - ``first_batch_size`` 取 settings.yaml 的 ``config.approve_greeting.first_batch_size``，
-      兼容旧 ``batch_size``，默认 3，
-      负数会被矫正为 0（视为本轮不通过任何一条，仅扫描计数）。
+    - ``first_batch_size`` 取 ``config.approve_greeting.first_batch_min_count``，
+      兼容旧 ``first_batch_size`` / ``batch_size``，默认 3。
     - ``sayhi_entry_text`` 取 elements.yaml 的 ``entry_elements.sayhi_entry.text``，兜底为「收到的招呼」。
     - ``badge_resource_id`` 取 ``entry_elements.red_dot.resourceId``，用于从 UI 列表页抓未读数字。
     - ``accept_button_resource_id`` 取 ``buttons.accept_button.resourceId``，详情页的「通过」按钮。
@@ -132,7 +131,12 @@ def approve_greeting_config(settings, elements):
     btn = (elements or {}).get("buttons") or {}
 
     try:
-        first_batch_size = int(cfg.get("first_batch_size", cfg.get("batch_size", 3)))
+        first_batch_size = int(
+            cfg.get(
+                "first_batch_min_count",
+                cfg.get("first_batch_size", cfg.get("batch_size", 3)),
+            )
+        )
     except (TypeError, ValueError):
         first_batch_size = 3
     first_batch_size = max(0, first_batch_size)

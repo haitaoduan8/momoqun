@@ -22,6 +22,18 @@ def adb_serial_to_agent_serial(adb_serial: str) -> str:
     return AgentRouter.normalize_serial(adb_serial.strip())
 
 
+def agent_serial_to_adb_serial(agent_serial: str) -> str:
+    """Agent/master serial → ADB serial（``127.0.0.1_5555`` → ``127.0.0.1:5555``）。"""
+    s = (agent_serial or "").strip()
+    if ":" in s:
+        return s
+    if "_" in s:
+        host, tail = s.rsplit("_", 1)
+        if tail.isdigit():
+            return f"{host}:{tail}"
+    return s
+
+
 def build_set_config_command(
     adb_serial: str,
     master_url: str,

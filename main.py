@@ -17,23 +17,15 @@ import signal
 import sys
 import time
 
-import yaml
-
 from device_manager import DeviceThread
 from data.storage import StorageHandler
+from utils.config_load import load_elements, load_settings
 from utils.helpers import setup_logging
 
 
 def load_config() -> tuple:
     """加载 settings 和 elements 配置。"""
-    with open("config/settings.yaml", "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-        settings = raw.get("config") or {}
-
-    with open("config/elements.yaml", "r", encoding="utf-8") as f:
-        elements = yaml.safe_load(f) or {}
-
-    return settings, elements
+    return load_settings(), load_elements()
 
 
 def main() -> None:
@@ -125,11 +117,11 @@ def main() -> None:
     except Exception:
         logger.exception("退出归档失败（忽略）")
     try:
-        from core.message_pool import archive_and_clear_all_state
+        from data.storage import archive_and_clear_all_state
         archive_and_clear_all_state()
     except Exception:
         logger.exception("退出归档 state 失败（忽略）")
-    logger.info("momoqun 已退出")
+    logger.info("动态群 已退出")
 
 
 if __name__ == "__main__":

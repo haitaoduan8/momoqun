@@ -581,19 +581,47 @@ class AgentHandler:
     # ------------------------------------------------------------------
     # 文本输入（IME APK 走 RPC）
     # ------------------------------------------------------------------
-    def human_type(self, text: str, chunk_size: int = 3) -> None:
-        if not text:
-            return
+    def prepare_ime_input(self, settle_s: float = 0.45) -> None:
+        """点击输入框后等待焦点与 MomoQunIME InputConnection 就绪。"""
+        self.invalidate_input_ime_cache()
+        time.sleep(settle_s)
         if not self.ensure_input_ime_ready():
             raise RuntimeError(
                 "agent momoqun-ime 未就绪，已拒绝 type_text 以避免软键盘点击回退"
             )
-        # 按 chunk 切分以模拟真人输入节奏
+
+    def human_type(self, text: str, chunk_size: int = 3) -> None:
+        if not text:
+            return
+        self.prepare_ime_input()
+        logging.info("momoqun-ime 开始输入，共 %d 字", len(text))
         for i in range(0, len(text), chunk_size):
             chunk = text[i : i + chunk_size]
             if not chunk:
                 continue
-            self.d._call("type_text", {"text": chunk})
+            last_err: Optional[Exception] = None
+            for attempt in range(3):
+                try:
+                    self.d._call("type_text", {"text": chunk})
+                    logging.info(
+                        "momoqun-ime 已输入 %r (%d/%d)",
+                        chunk,
+                        min(i + chunk_size, len(text)),
+                        len(text),
+                    )
+                    last_err = None
+                    break
+                except Exception as exc:
+                    last_err = exc
+                    logging.warning(
+                        "type_text 第 %d 次失败 chunk=%r: %s",
+                        attempt + 1,
+                        chunk,
+                        exc,
+                    )
+                    time.sleep(0.25)
+            if last_err is not None:
+                raise RuntimeError(f"type_text 失败: {chunk!r}") from last_err
             time.sleep(random.uniform(0.1, 0.3))
 
 

@@ -5,9 +5,10 @@ UI 元素皆从真机 dump 验证（OnePlus 8T + 陌陌渠道包，2026-05-21）
 
 import logging
 import random
+import re
 import time
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import List, Optional
 
 from core.driver import DeviceHandler
 from utils.helpers import ElementsConfig, parse_bounds, random_delay
@@ -464,7 +465,33 @@ class GroupInviter:
             logging.exception("open_invite_panel 异常")
             return False
 
-    def select_friend(self, friend_name: str) -> bool:
+    def _invite_panel_selected_count(self) -> int:
+        try:
+            xml = self.driver.d.dump_hierarchy()
+            m = re.search(r"邀请好友\((\d+)\)", xml)
+            return int(m.group(1)) if m else 0
+        except Exception:
+            self._logger.debug("_invite_panel_selected_count 异常", exc_info=True)
+            return 0
+
+    def select_friends(self, friend_names: List[str]) -> int:
+        """在邀请面板中多选好友，返回成功勾选人数。"""
+        if not friend_names:
+            return 0
+        selected = 0
+        for name in friend_names:
+            if self.select_friend(name, require_count_increase=True):
+                selected += 1
+        self._logger.info(
+            "select_friends: 请求 %d 人，已选 %d 人",
+            len(friend_names),
+            selected,
+        )
+        return selected
+
+    def select_friend(
+        self, friend_name: str, *, require_count_increase: bool = False
+    ) -> bool:
         """在邀请面板中查找并点击好友名字以勾选。
 
         真机验证：
@@ -477,6 +504,9 @@ class GroupInviter:
         注意：点名字本身即可勾选，不需要单独的 checkbox。
         """
         self._logger.info("select_friend: 查找 %s", friend_name)
+        before_count = (
+            self._invite_panel_selected_count() if require_count_increase else 0
+        )
 
         # 查找好友（可能需滚动）
         for scroll in range(8):
@@ -497,20 +527,38 @@ class GroupInviter:
                         random_delay(self.settings)
                         time.sleep(random.uniform(0.5, 1.0))
 
-                        # 验证选中
-                        xml2 = self.driver.d.dump_hierarchy()
-                        if "邀请好友(1)" in xml2:
-                            self._logger.info("好友 %s 已选中", friend_name)
-                            return True
+                        if require_count_increase:
+                            after = self._invite_panel_selected_count()
+                            if after > before_count:
+                                self._logger.info(
+                                    "好友 %s 已选中（%d→%d）",
+                                    friend_name,
+                                    before_count,
+                                    after,
+                                )
+                                return True
+                            self._logger.warning(
+                                "点击后选中数未增加（%d），重试 %s",
+                                before_count,
+                                friend_name,
+                            )
+                            self.driver.random_click_xy(cx, cy)
+                            time.sleep(random.uniform(0.5, 1.0))
+                            if self._invite_panel_selected_count() > before_count:
+                                self._logger.info("重试后选中成功: %s", friend_name)
+                                return True
                         else:
+                            xml2 = self.driver.d.dump_hierarchy()
+                            if "邀请好友(1)" in xml2 or "邀请好友(" in xml2:
+                                self._logger.info("好友 %s 已选中", friend_name)
+                                return True
                             self._logger.warning(
                                 "点击后未检测到选中状态，可能需再点一次"
                             )
-                            # 重试一次
                             self.driver.random_click_xy(cx, cy)
                             time.sleep(random.uniform(0.5, 1.0))
                             xml2 = self.driver.d.dump_hierarchy()
-                            if "邀请好友(1)" in xml2:
+                            if "邀请好友(" in xml2:
                                 self._logger.info("重试后选中成功")
                                 return True
 

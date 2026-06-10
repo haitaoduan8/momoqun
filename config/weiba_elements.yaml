@@ -1,0 +1,101 @@
+# 微霸自动上号 UI 元素（真机 dump 采集，参考分辨率 1080×2400）
+# 运行时优先 text/resourceId/content-desc 匹配，坐标为 fallback。
+
+account_boot:
+  launcher:
+    # 桌面固定槽位（1080×2400），请将微霸图标拖到此位置
+    weiba_icon:
+      x: 741
+      y: 311
+  weiba:
+    refresh_button:
+      contentDesc: "刷新"
+      x: 104
+      y: 165
+    fenshen_tab:
+      contentDesc: "分身"
+      text: "分身"
+      partial: true
+      bottom_tab: true
+      x: 403
+      y: 2280
+    home_tab:
+      contentDesc: "首页"
+      text: "首页"
+      partial: true
+      bottom_tab: true
+      x: 135
+      y: 2280
+    first_clone:
+      x: 135
+      y: 805
+    one_key_switch:
+      text: "一键切换"
+      partial: true
+      page: weiba_switch_dialog
+      x: 540
+      y: 2194
+    open_button:
+      text: "打开"
+      partial: true
+      x: 539
+      y: 550
+    location_sim:
+      text: "位置模拟"
+      partial: true
+      x: 290
+      y: 1324
+    address_input:
+      resourceId: "suggestId"
+      x: 540
+      y: 259
+    done_button:
+      text: "完成"
+      partial: true
+      x: 983
+      y: 167
+  momo:
+    enable_location:
+      text: "一键开启"
+      x: 540
+      y: 1381
+    permission_allow:
+      resourceId: "com.android.permissioncontroller:id/permission_allow_foreground_only_button"
+      text: "使用时允许"
+      x: 540
+      y: 1498
+    network_dialog_marker:
+      text: "网络提示"
+    network_play:
+      resourceId: "com.immomo.momo:id/dialog_video_confirm"
+      text: "播放"
+      x: 745
+      y: 1422
+    message_tab:
+      resourceId: "com.immomo.momo:id/maintab_layout_chat"
+      x: 540
+      y: 2266
+    message_badge:
+      resourceId: "com.immomo.momo:id/tab_item_tv_badge"
+      x: 579
+      y: 2222
+    badge_drag_target:
+      x: 1050
+      y: 300
+    more_tab:
+      resourceId: "com.immomo.momo:id/maintab_layout_profile"
+      x: 972
+      y: 2266
+    post_dynamic_button:
+      text: "发动态"
+      x: 202
+      y: 1062
+    post_editor:
+      resourceId: "com.immomo.momo:id/edit_publish_txt"
+      x: 540
+      y: 631
+    post_publish:
+      resourceId: "com.immomo.momo:id/llayout_send"
+      text: "发布"
+      x: 924
+      y: 178
