@@ -27,3 +27,6 @@ webui/.next/
 webui/out/
 webui/.env.local
 webui/tsconfig.tsbuildinfo
+
+# Debug UI dumps
+ui_dump_ad*.xml
