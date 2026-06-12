@@ -24,8 +24,8 @@ type FormState = {
   max_consecutive_errors: number;
   chat_ignore_names_text: string;
   account_boot_enabled: boolean;
-  preset_address: string;
-  dynamic_content: string;
+  preset_addresses_text: string;
+  dynamic_contents_text: string;
   post_dynamic_enabled: boolean;
   account_boot_step_wait_s: number;
   page_verify_retries: number;
@@ -51,8 +51,12 @@ function configToForm(config: Config): FormState {
     max_consecutive_errors: config.max_consecutive_errors || 5,
     chat_ignore_names_text: (config.chat_ignore_names || []).join("\n"),
     account_boot_enabled: boot.enabled ?? true,
-    preset_address: boot.preset_address || "",
-    dynamic_content: boot.dynamic_content || "",
+    preset_addresses_text: (boot.preset_addresses && boot.preset_addresses.length > 0)
+      ? boot.preset_addresses.join("\n")
+      : (boot.preset_address ? boot.preset_address : ""),
+    dynamic_contents_text: (boot.dynamic_contents && boot.dynamic_contents.length > 0)
+      ? boot.dynamic_contents.join("\n")
+      : (boot.dynamic_content ? boot.dynamic_content : ""),
     post_dynamic_enabled: boot.post_dynamic_enabled ?? true,
     account_boot_step_wait_s: boot.step_wait_s ?? 1.5,
     page_verify_retries: boot.page_verify_retries ?? 12,
@@ -83,8 +87,14 @@ function formToPatch(form: FormState): Partial<Config> {
     chat_ignore_names: ignoreNames,
     account_boot: {
       enabled: form.account_boot_enabled,
-      preset_address: form.preset_address.trim(),
-      dynamic_content: form.dynamic_content.trim(),
+      preset_addresses: form.preset_addresses_text
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      dynamic_contents: form.dynamic_contents_text
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
       post_dynamic_enabled: form.post_dynamic_enabled,
       step_wait_s: form.account_boot_step_wait_s,
       page_verify_retries: form.page_verify_retries,
@@ -275,13 +285,13 @@ export function ConfigPanel() {
             </button>
           </div>
           <div>
-            <label className="text-sm text-muted-foreground">预设地址（位置模拟输入）</label>
-            <input
-              type="text"
-              value={formData.preset_address}
-              onChange={(e) => setFormData({ ...formData, preset_address: e.target.value })}
-              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
-              placeholder="例如：济南市历下区泉城路"
+            <label className="text-sm text-muted-foreground">预设地址（一行一个，按设备顺序循环使用）</label>
+            <textarea
+              value={formData.preset_addresses_text}
+              onChange={(e) => setFormData({ ...formData, preset_addresses_text: e.target.value })}
+              rows={3}
+              className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 text-sm"
+              placeholder={"例如：\n济南市历下区泉城路\n北京市朝阳区三里屯"}
             />
           </div>
           <div className="flex items-center justify-between p-4 rounded-lg bg-bg-card border border-accent/6">
@@ -309,13 +319,13 @@ export function ConfigPanel() {
             </button>
           </div>
           <div>
-            <label className="text-sm text-muted-foreground">动态文案</label>
+            <label className="text-sm text-muted-foreground">动态文案（一行一个，按设备顺序循环使用）</label>
             <textarea
-              value={formData.dynamic_content}
-              onChange={(e) => setFormData({ ...formData, dynamic_content: e.target.value })}
-              rows={3}
+              value={formData.dynamic_contents_text}
+              onChange={(e) => setFormData({ ...formData, dynamic_contents_text: e.target.value })}
+              rows={4}
               className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 text-sm"
-              placeholder="发动态时自动填入的文案"
+              placeholder={"例如：\n今天天气真好\n周末愉快"}
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -458,6 +458,9 @@ async def api_account_check_config(data: dict = None):
             interval_minutes=data.get("interval_minutes"),
             on_abnormal=data.get("on_abnormal"),
             idle_after_invite_minutes=data.get("idle_after_invite_minutes"),
+            post_dynamic_no_greet_swap_minutes=data.get(
+                "post_dynamic_no_greet_swap_minutes"
+            ),
             local_dir=data.get("local_dir"),
             remote_dir=data.get("remote_dir"),
         )
@@ -470,6 +473,9 @@ async def api_account_check_config(data: dict = None):
             ac["on_abnormal"] = new_cfg["on_abnormal"]
             ac["idle_after_invite_minutes"] = new_cfg.get(
                 "idle_after_invite_minutes", 5
+            )
+            ac["post_dynamic_no_greet_swap_minutes"] = new_cfg.get(
+                "post_dynamic_no_greet_swap_minutes", 5
             )
             ac["local_dir"] = new_cfg.get("local_dir", "")
             ac["remote_dir"] = new_cfg.get("remote_dir", "/sdcard/Download")
@@ -847,6 +853,99 @@ async def api_shutdown():
 
     threading.Thread(target=_do_exit, daemon=True).start()
     return {"ok": True, "message": "正在关闭..."}
+
+
+# ---------------------------------------------------------------------------
+# 测试：换号+上号流程
+# ---------------------------------------------------------------------------
+@app.post("/api/test/swap-boot")
+async def api_test_swap_boot(data: dict = None):
+    """测试：聊天列表 → 微霸 → 换号 → 上号。
+
+    body: {"serial": "af75a260", "local_dir": "/path/to/files", "remote_dir": "/sdcard/Download"}
+    """
+    if not isinstance(data, dict):
+        data = {}
+    serial = (data.get("serial") or "").strip()
+    local_dir = (data.get("local_dir") or "").strip()
+    remote_dir = (data.get("remote_dir") or "/sdcard/Download").strip()
+    slot_index = int(data.get("slot_index", 0))
+
+    if not serial:
+        return JSONResponse({"ok": False, "error": "serial required"}, status_code=400)
+    if not local_dir:
+        return JSONResponse({"ok": False, "error": "local_dir required"}, status_code=400)
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+    result_future = loop.create_future()
+
+    def _run():
+        import logging as _logging
+        _log = _logging.getLogger("test_swap_boot")
+        try:
+            from core.drivers.agent_driver import AgentHandler
+            from core.weiba_refresh import ensure_weiba_phone_and_refresh
+            from core.account_boot import run_account_boot_from_phone, BootResult
+            from ops.account_swap import swap_account_file_for_device
+
+            settings = _load_settings()
+            elements = _load_elements()
+
+            router = get_router()
+            conn = router.get(serial)
+            if conn is None:
+                loop.call_soon_threadsafe(result_future.set_result,
+                    {"ok": False, "error": f"agent {serial} not connected"})
+                return
+
+            _log.info("[1/4] 初始化 AgentHandler serial=%s", serial)
+            config_path = os.path.join(BASE, "config", "settings.yaml")
+            driver = AgentHandler(config_path=config_path, serial=conn.serial)
+            driver.ensure_input_ime_ready()
+
+            _log.info("[2/4] 退回微霸手机界面并刷新...")
+            ok = ensure_weiba_phone_and_refresh(driver, elements, settings, logger=_log)
+            if not ok:
+                loop.call_soon_threadsafe(result_future.set_result,
+                    {"ok": False, "error": "退回微霸失败", "step": 2})
+                return
+            _log.info("微霸刷新完成 ✓")
+
+            _log.info("[3/4] 换号：推送新文件...")
+            swap_result = swap_account_file_for_device(
+                adb_serial=serial, local_dir=local_dir,
+                remote_dir=remote_dir, agent_serial=serial,
+            )
+            if not swap_result.get("ok"):
+                loop.call_soon_threadsafe(result_future.set_result,
+                    {"ok": False, "error": f"换号失败: {swap_result.get('error')}", "step": 3})
+                return
+            _log.info("换号成功 ✓ 文件: %s", swap_result.get("file"))
+
+            _log.info("[4/4] 上号（分身切换 → 打开陌陌）slot_index=%d...", slot_index)
+            boot_result = run_account_boot_from_phone(
+                driver, elements, settings, logger=_log, slot_index=slot_index,
+            )
+            if boot_result == BootResult.SUCCESS:
+                _log.info("上号完成 ✓")
+                loop.call_soon_threadsafe(result_future.set_result,
+                    {"ok": True, "file": swap_result.get("file"), "boot": "success"})
+            else:
+                loop.call_soon_threadsafe(result_future.set_result,
+                    {"ok": False, "error": f"上号结果: {boot_result}", "step": 4})
+        except Exception as e:
+            _log.exception("测试流程异常")
+            loop.call_soon_threadsafe(result_future.set_result,
+                {"ok": False, "error": str(e), "type": type(e).__name__})
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    try:
+        result = await asyncio.wait_for(result_future, timeout=300)
+        return result
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "timeout 300s"}
 
 
 # ---------------------------------------------------------------------------

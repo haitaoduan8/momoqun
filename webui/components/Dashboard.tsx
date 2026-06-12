@@ -36,6 +36,7 @@ export type DashboardViewProps = {
 function DeviceCard({
   name,
   serial,
+  slotIndex,
   status,
   rounds,
   friends,
@@ -47,6 +48,7 @@ function DeviceCard({
 }: {
   name: string;
   serial: string;
+  slotIndex?: number;
   status: "running" | "paused" | "stopped" | "error" | "waiting_agent";
   rounds: number;
   friends: number;
@@ -93,7 +95,9 @@ function DeviceCard({
             </div>
             <div>
               <h3 className="font-semibold text-white">{name}</h3>
-              <p className="text-xs text-muted-foreground font-mono">{serial}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {slotIndex !== undefined ? `#${slotIndex} ` : ""}{serial}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -372,6 +376,7 @@ export function Dashboard({
                   key={device.serial}
                   name={device.name || device.serial}
                   serial={device.serial}
+                  slotIndex={device.slot_index}
                   status={
                     displayStatus as
                       | "running"

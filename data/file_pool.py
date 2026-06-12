@@ -41,6 +41,7 @@ def list_local_files(local_dir: str) -> List[str]:
         os.path.join(local_dir, name)
         for name in os.listdir(local_dir)
         if os.path.isfile(os.path.join(local_dir, name))
+        and not name.startswith(".")
     )
 
 

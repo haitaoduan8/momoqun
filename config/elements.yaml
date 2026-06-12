@@ -145,18 +145,4 @@ account_check:
   back_button:
     resourceId: "com.immomo.momo:id/iv_back"
 
-# 拉黑好友（2026-05-21 真机 dump 验证）
-block_friend:
-  # 对话框右上角头像按钮
-  toolbar_avatar:
-    resourceId: "com.immomo.momo:id/chat_toolbar_avatar"
-  # 聊天设置页「拉黑」文字（label，不可点击，需用坐标）
-  block_text: "拉黑"
-  # 确认弹窗「拉黑」按钮（可点击）
-  confirm_block_button:
-    resourceId: "android:id/button1"
-    text: "拉黑"
-  # 确认弹窗「取消」按钮
-  cancel_button:
-    resourceId: "android:id/button2"
-    text: "取消"
+

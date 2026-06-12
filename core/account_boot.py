@@ -222,6 +222,7 @@ def _page_verify_opts(settings: dict) -> dict:
     boot_cfg = (settings or {}).get("account_boot") or {}
     return {
         "retries": int(boot_cfg.get("page_verify_retries") or 12),
+        "element_retries": int(boot_cfg.get("element_verify_retries") or 2),
         "poll_s": float(boot_cfg.get("page_verify_poll_s") or 1.0),
     }
 
@@ -236,6 +237,15 @@ def _allow_coord_fallback(settings: dict, spec: dict) -> bool:
 def _fail_click(logger: logging.Logger, label: str, reason: str) -> None:
     logger.error("【点击失败】%s — %s", label, reason)
     raise BootStepFailed(label, reason)
+
+
+def _collect_ad_page(driver, serial: str, label: str, logger: logging.Logger) -> None:
+    """遇到意外页面时保存 XML 快照（静默失败不影响主流程）。"""
+    try:
+        from data.ad_collector import try_collect_from_driver
+        try_collect_from_driver(driver, serial=serial, label=label, logger=logger)
+    except Exception:
+        pass
 
 
 def _spec_needs_element(spec: dict) -> bool:
@@ -281,11 +291,13 @@ def _click_xy(
             page,
             _PAGE_PRESETS,
             retries=opts["retries"],
+            element_retries=opts["element_retries"],
             poll_s=opts["poll_s"],
             logger=logger,
             label=label,
         )
         if verified is None:
+            _collect_ad_page(driver, getattr(driver, "serial", ""), f"page_verify_fail_{label}", logger)
             _fail_click(
                 logger,
                 label,
@@ -510,6 +522,7 @@ def _click_spec(
             page,
             _PAGE_PRESETS,
             retries=opts["retries"],
+            element_retries=opts["element_retries"],
             poll_s=opts["poll_s"],
             logger=logger,
             label=label,
@@ -562,6 +575,7 @@ def _click_spec(
         raise
     except Exception:
         logger.exception("dump/页面校验失败: %s", label)
+        _collect_ad_page(driver, getattr(driver, "serial", ""), f"click_spec_exc_{label}", logger)
         _fail_click(logger, label, "点击流程异常")
 
 
@@ -615,6 +629,7 @@ def _click_first_clone(
             page,
             _PAGE_PRESETS,
             retries=opts["retries"],
+            element_retries=opts["element_retries"],
             poll_s=opts["poll_s"],
             logger=logger,
             label=label,
@@ -707,6 +722,7 @@ def _click_one_key_switch(
             page,
             _PAGE_PRESETS,
             retries=opts["retries"],
+            element_retries=opts["element_retries"],
             poll_s=opts["poll_s"],
             logger=logger,
             label=label,
@@ -881,10 +897,10 @@ def _badge_drag_timings(settings: dict) -> tuple[int, int]:
     except (TypeError, ValueError):
         hold_ms = 750
     try:
-        drag_ms = int(boot_cfg.get("badge_drag_swipe_ms") or 2200)
+        drag_ms = int(boot_cfg.get("badge_drag_swipe_ms") or 2500)
     except (TypeError, ValueError):
-        drag_ms = 2200
-    return max(100, hold_ms), max(200, drag_ms)
+        drag_ms = 2500
+    return max(100, hold_ms), max(400, drag_ms)
 
 
 def _perform_badge_drag_gesture(
@@ -917,14 +933,11 @@ def _perform_badge_drag_gesture(
         hold_ms,
         drag_ms,
     )
-    drag_hold = getattr(driver.d, "drag_hold", None)
-    if callable(drag_hold):
-        drag_hold(sx, sy, end_x, end_y, hold_ms=hold_ms, drag_ms=drag_ms)
-    else:
-        # 旧版 APK：单次慢滑，避免 long_click + swipe 两次命令中间抬手
-        driver.d.swipe(sx, sy, end_x, end_y, max(drag_ms, hold_ms + drag_ms) / 1000.0)
+    # 实测：陌陌 Tab 红点需单次慢滑；drag_hold（两次 input swipe）中间会抬手，拖不走。
+    swipe_s = drag_ms / 1000.0
+    driver.d.swipe(sx, sy, end_x, end_y, swipe_s)
     random_delay(settings)
-    time.sleep(0.8)
+    time.sleep(0.5)
 
 
 def _drag_message_badge(
@@ -951,6 +964,7 @@ def _drag_message_badge(
             page,
             _PAGE_PRESETS,
             retries=opts["retries"],
+            element_retries=opts["element_retries"],
             poll_s=opts["poll_s"],
             logger=logger,
             label="drag_message_badge",
@@ -1037,6 +1051,13 @@ def _clone_select_wait(settings: dict, boot_cfg: dict, logger: logging.Logger) -
     time.sleep(max(0.0, wait_s))
 
 
+def _pick_by_slot(items: list, slot_index: int) -> str:
+    """从列表中按 slot_index 循环取值。"""
+    if not items:
+        return ""
+    return str(items[slot_index % len(items)]).strip()
+
+
 def _run_weiba_open_momo_tail(
     driver: Any,
     elements: dict,
@@ -1044,11 +1065,19 @@ def _run_weiba_open_momo_tail(
     boot_cfg: dict,
     elem_cfg: dict,
     log: logging.Logger,
+    slot_index: int = 0,
 ) -> BootResult:
     """一键切换之后：首页 → 定位 → 打开陌陌 → 权限/弹窗 → 拖走红点。"""
     weiba = elem_cfg.get("weiba") or {}
     momo = elem_cfg.get("momo") or {}
-    preset_address = str(boot_cfg.get("preset_address") or "").strip()
+
+    # 兼容旧配置：preset_address (str) 和 preset_addresses (list)
+    addresses = boot_cfg.get("preset_addresses") or []
+    if not addresses:
+        legacy = str(boot_cfg.get("preset_address") or "").strip()
+        if legacy:
+            addresses = [legacy]
+    preset_address = _pick_by_slot(addresses, slot_index)
 
     _click_spec(driver, settings, weiba.get("home_tab") or {}, log, label="weiba_home")
     _click_spec(driver, settings, weiba.get("location_sim") or {}, log, label="location_sim")
@@ -1077,6 +1106,7 @@ def run_account_boot_from_phone(
     settings: dict,
     *,
     logger: Optional[logging.Logger] = None,
+    slot_index: int = 0,
 ) -> BootResult:
     """换号刷新后：已在微霸手机界面，点第一个文件号 → 一键切换 → 打开陌陌…"""
     log = logger or logging.getLogger("account_boot")
@@ -1087,7 +1117,8 @@ def run_account_boot_from_phone(
         log.info("换号后续上号：第一个文件号 → 弹窗一键切换 → 打开")
         _select_first_clone_and_switch(driver, settings, elem_cfg, boot_cfg, log)
         result = _run_weiba_open_momo_tail(
-            driver, elements, settings, boot_cfg, elem_cfg, log
+            driver, elements, settings, boot_cfg, elem_cfg, log,
+            slot_index=slot_index,
         )
         if result is BootResult.SUCCESS:
             log.info("换号后续上号完成")
@@ -1107,6 +1138,7 @@ def run_account_boot(
     settings: dict,
     *,
     logger: Optional[logging.Logger] = None,
+    slot_index: int = 0,
 ) -> BootResult:
     """执行完整上号流程。"""
     log = logger or logging.getLogger("account_boot")
@@ -1140,7 +1172,8 @@ def run_account_boot(
         _select_first_clone_and_switch(driver, settings, elem_cfg, boot_cfg, log)
 
         result = _run_weiba_open_momo_tail(
-            driver, elements, settings, boot_cfg, elem_cfg, log
+            driver, elements, settings, boot_cfg, elem_cfg, log,
+            slot_index=slot_index,
         )
         if result is BootResult.SUCCESS:
             log.info("自动上号完成")

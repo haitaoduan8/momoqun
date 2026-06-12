@@ -96,6 +96,7 @@ export async function getAgents(): Promise<{ agents: OnlineAgent[] }> {
 export interface Device {
   serial: string;
   name: string;
+  slot_index?: number;
   state: "running" | "paused" | "stopped" | "error" | "waiting_agent";
   round_number?: number;
   friends_total?: number;
@@ -175,7 +176,11 @@ export async function getLogs(limit = 200): Promise<{ logs: LogEntry[] }> {
 
 export interface AccountBootConfig {
   enabled?: boolean;
+  preset_addresses?: string[];
+  dynamic_contents?: string[];
+  /** @deprecated 旧字段，已迁移为 preset_addresses */
   preset_address?: string;
+  /** @deprecated 旧字段，已迁移为 dynamic_contents */
   dynamic_content?: string;
   step_wait_s?: number;
   post_publish_wait_s?: number;
@@ -196,6 +201,7 @@ export interface AccountCheckConfig {
   enabled?: boolean;
   interval_minutes?: number;
   idle_after_invite_minutes?: number;
+  post_dynamic_no_greet_swap_minutes?: number;
   local_dir?: string;
   remote_dir?: string;
   on_abnormal?: string;
@@ -236,6 +242,7 @@ export interface AccountCheckStatus {
     interval_minutes: number;
     on_abnormal?: string;
     idle_after_invite_minutes?: number;
+    post_dynamic_no_greet_swap_minutes?: number;
     local_dir?: string;
     remote_dir?: string;
     last_trigger_at?: number;
@@ -255,6 +262,8 @@ export async function updateAccountCheckConfig(body: {
   enabled?: boolean;
   interval_minutes?: number;
   idle_after_invite_minutes?: number;
+  post_dynamic_no_greet_swap_minutes?: number;
+  on_abnormal?: string;
   local_dir?: string;
   remote_dir?: string;
 }): Promise<{ ok: boolean; config?: any }> {

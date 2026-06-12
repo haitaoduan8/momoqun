@@ -25,6 +25,14 @@ def _low_greet_wait_minutes(settings: dict) -> float:
         return 5.0
 
 
+def _post_dynamic_swap_enabled(settings: dict) -> bool:
+    ac_cfg = (settings or {}).get("account_check") or {}
+    try:
+        return float(ac_cfg.get("post_dynamic_no_greet_swap_minutes", 5)) > 0
+    except (TypeError, ValueError):
+        return True
+
+
 def maybe_report_low_greet(
     *,
     greeter: Any,
@@ -37,6 +45,8 @@ def maybe_report_low_greet(
     """发完动态满 N 分钟且招呼未达首批阈值时，登记当前号文件名（每号一次）。"""
     log = logger or logging.getLogger("low_greet_watch")
     try:
+        if _post_dynamic_swap_enabled(settings):
+            return False
         if storage.get_device_state_flag("first_greet_batch_done", False):
             return False
         if storage.get_device_state_flag("low_greet_reported", False):

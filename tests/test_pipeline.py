@@ -60,7 +60,7 @@ class SessionRoundTests(unittest.TestCase):
             sr._step_approve_greetings()
         sr.greeter.enter_sayhi_list.assert_called_once()
 
-    def test_step_invite_to_group_without_block(self) -> None:
+    def test_step_invite_to_group(self) -> None:
         sr = self._make_round()
         sr._approved_this_round = [("alice", "Alice")]
         with patch.object(sr, "_batch_invite_friends", return_value=1) as batch_invite:

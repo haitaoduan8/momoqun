@@ -10,15 +10,17 @@ export function AccountCheckPanel() {
   const { status, loading, refresh } = useAccountCheck();
   const [updating, setUpdating] = useState(false);
   const [triggering, setTriggering] = useState(false);
-  const [idleMinutes, setIdleMinutes] = useState(5);
+  const [postDynamicSwapMin, setPostDynamicSwapMin] = useState(5);
   const [localDir, setLocalDir] = useState("");
   const [remoteDir, setRemoteDir] = useState("/sdcard/Download");
+  const [onAbnormal, setOnAbnormal] = useState("continue");
 
   useEffect(() => {
     if (!status?.config) return;
-    setIdleMinutes(status.config.idle_after_invite_minutes ?? 5);
+    setPostDynamicSwapMin(status.config.post_dynamic_no_greet_swap_minutes ?? 5);
     setLocalDir(status.config.local_dir ?? "");
     setRemoteDir(status.config.remote_dir ?? "/sdcard/Download");
+    setOnAbnormal(status.config.on_abnormal ?? "continue");
   }, [status?.config]);
 
   const abnormalAccounts =
@@ -50,7 +52,8 @@ export function AccountCheckPanel() {
     setUpdating(true);
     try {
       await updateAccountCheckConfig({
-        idle_after_invite_minutes: idleMinutes,
+        post_dynamic_no_greet_swap_minutes: postDynamicSwapMin,
+        on_abnormal: onAbnormal,
         local_dir: localDir.trim(),
         remote_dir: remoteDir.trim() || "/sdcard/Download",
       });
@@ -89,14 +92,16 @@ export function AccountCheckPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-accent" />
-            账号检测设置
+            账号检测与换号
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-white">启用定时检测</p>
-              <p className="text-sm text-muted-foreground">按周期自动检测账号状态（与下方空闲检测独立）</p>
+              <p className="font-medium text-white">启用定时异常检测</p>
+              <p className="text-sm text-muted-foreground">
+                按周期检测「账号存在异常」banner，命中则自动换号
+              </p>
             </div>
             <button
               onClick={() => handleToggle(!status?.config.enabled)}
@@ -135,27 +140,42 @@ export function AccountCheckPanel() {
 
           <div className="pt-2 border-t border-accent/10 space-y-4">
             <p className="text-sm text-muted-foreground">
-              邀请进群后：若连续无招呼达到下方分钟数，则检测是否违规；正常则继续等招呼，违规则清空模拟器目录并从未使用过的本地文件换号（多机共享记录）。
+              发动态后：连续无招呼达到下方分钟数则<strong className="text-white">直接换号</strong>
+              （不进入个人主页检测）。号池文件经 ADB 推送到模拟器后自动上号并发动态。
             </p>
             <div>
-              <label className="text-sm text-muted-foreground">无招呼触发检测（分钟）</label>
+              <label className="text-sm text-muted-foreground">
+                发动态后无招呼换号（分钟，0=关闭）
+              </label>
               <input
                 type="number"
-                min={1}
-                value={idleMinutes}
-                onChange={(e) => setIdleMinutes(parseFloat(e.target.value) || 5)}
+                min={0}
+                value={postDynamicSwapMin}
+                onChange={(e) => setPostDynamicSwapMin(parseFloat(e.target.value) || 0)}
                 className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
               />
             </div>
             <div>
+              <label className="text-sm text-muted-foreground">异常换号后行为</label>
+              <select
+                value={onAbnormal}
+                onChange={(e) => setOnAbnormal(e.target.value)}
+                className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30"
+              >
+                <option value="continue">全自动继续（换号成功不暂停）</option>
+                <option value="pause">换号后仍暂停（需手动继续）</option>
+                <option value="mark_only">仅标记异常（不自动换号）</option>
+              </select>
+            </div>
+            <div>
               <label className="text-sm text-muted-foreground flex items-center gap-1">
-                <FolderOpen className="w-4 h-4" /> 本地文件夹（Master 宿主机路径）
+                <FolderOpen className="w-4 h-4" /> 本地号池文件夹（Master 宿主机路径）
               </label>
               <input
                 type="text"
                 value={localDir}
                 onChange={(e) => setLocalDir(e.target.value)}
-                placeholder="D:\accounts\pool"
+                placeholder="/path/to/account/pool"
                 className="w-full mt-1 px-4 py-2 bg-bg-input border border-accent/6 rounded-lg text-white focus:outline-none focus:border-accent/30 font-mono text-sm"
               />
             </div>
@@ -174,7 +194,7 @@ export function AccountCheckPanel() {
               className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent/10 text-accent rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
             >
               {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              保存换号与空闲检测配置
+              保存换号配置
             </button>
           </div>
 

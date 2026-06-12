@@ -88,6 +88,7 @@ class SessionRound:
             raise
         except Exception:
             self._logger.exception("Step A 异常，继续 Step B")
+            self._collect_ad_on_error()
 
         try:
             self._step_invite_to_group()
@@ -95,6 +96,7 @@ class SessionRound:
             raise
         except Exception:
             self._logger.exception("Step B 异常，继续 Phase 4")
+            self._collect_ad_on_error()
 
         self._phase4_wait()
 
@@ -292,4 +294,46 @@ class SessionRound:
         self._logger.debug(
             "Phase 4: 等待 %.0f 秒后进入下一轮", self.round_end_wait
         )
+        # idle 阶段扫描：dump 当前页面，如果和聊天列表不一致则保存
+        self._idle_ad_scan()
         time.sleep(self.round_end_wait)
+
+    def _collect_ad_on_error(self) -> None:
+        """异常时 dump 当前页面并保存（静默失败）。"""
+        try:
+            from data.ad_collector import try_collect_from_driver
+            try_collect_from_driver(
+                self.driver,
+                serial=self.serial or "",
+                label=f"pipeline_error_R{self.round_number}",
+                logger=self._logger,
+            )
+        except Exception:
+            pass
+
+    def _idle_ad_scan(self) -> None:
+        """idle 阶段扫描：dump 页面，如果包名不是陌陌或页面结构异常则保存。"""
+        try:
+            from data.ad_collector import save_ad_page
+            import xml.etree.ElementTree as ET
+
+            xml = self.driver.d.dump_hierarchy()
+            if not xml:
+                return
+            root = ET.fromstring(xml)
+            # 检查前台包名
+            pkg = ""
+            for node in root.iter():
+                p = node.attrib.get("package", "")
+                if p and p != "com.immomo.momo":
+                    pkg = p
+                    break
+            if pkg:
+                save_ad_page(
+                    xml,
+                    serial=self.serial or "",
+                    label=f"idle_foreign_pkg_{pkg[:20]}",
+                    logger=self._logger,
+                )
+        except Exception:
+            self._logger.debug("idle_ad_scan 异常", exc_info=True)

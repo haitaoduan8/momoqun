@@ -16,17 +16,27 @@ def run_post_dynamic(
     settings: dict,
     *,
     logger: Optional[logging.Logger] = None,
+    slot_index: int = 0,
 ) -> bool:
-    """发动态流程。文案从 settings.account_boot.dynamic_content 读取。"""
+    """发动态流程。文案从 settings.account_boot.dynamic_contents 按 slot 读取。"""
     log = logger or logging.getLogger("post_dynamic")
     boot_cfg = (settings or {}).get("account_boot") or {}
     if not boot_cfg.get("post_dynamic_enabled", True):
         log.info("post_dynamic 未启用，跳过")
         return False
 
-    content = str(boot_cfg.get("dynamic_content") or "").strip()
+    # 兼容旧配置：dynamic_content (str) 和 dynamic_contents (list)
+    contents = boot_cfg.get("dynamic_contents") or []
+    if not contents:
+        legacy = str(boot_cfg.get("dynamic_content") or "").strip()
+        if legacy:
+            contents = [legacy]
+    if not contents:
+        log.warning("未配置 dynamic_contents，跳过发动态")
+        return False
+    content = str(contents[slot_index % len(contents)]).strip()
     if not content:
-        log.warning("未配置 dynamic_content，跳过发动态")
+        log.warning("slot %d 的 dynamic_content 为空，跳过发动态", slot_index)
         return False
 
     elem_cfg = _get_elem_cfg(elements)
@@ -62,4 +72,9 @@ def run_post_dynamic(
         raise
     except Exception:
         log.exception("发动态异常")
+        try:
+            from data.ad_collector import try_collect_from_driver
+            try_collect_from_driver(driver, serial=getattr(driver, "serial", ""), label="post_dynamic_exc", logger=log)
+        except Exception:
+            pass
         raise BootStepFailed("post_dynamic", "发动态流程异常") from None

@@ -28,12 +28,14 @@ class DeviceThread:
         settings: dict,
         elements: dict,
         on_status_change: Optional[Callable] = None,
+        slot_index: int = 0,
     ) -> None:
         self.serial = serial
         self.name = name
         self.settings = settings
         self.elements = elements
         self._on_status = on_status_change
+        self.slot_index = slot_index
 
         # 运行时状态
         self._running = False
@@ -92,6 +94,7 @@ class DeviceThread:
             return {
                 "serial": self.serial,
                 "name": self.name,
+                "slot_index": self.slot_index,
                 "state": self._state,
                 "friend": self._friend,
                 "round": self._round,
@@ -378,9 +381,9 @@ class DeviceThread:
                     except Exception:
                         logger.exception("设备 %s: 低招呼检测异常", self.serial)
                     try:
-                        self._maybe_idle_wait_after_invite(logger)
+                        self._maybe_post_dynamic_no_greet_swap(logger)
                     except Exception:
-                        logger.exception("设备 %s: 邀请后空闲等待异常", self.serial)
+                        logger.exception("设备 %s: 发动态后无招呼换号等待异常", self.serial)
 
                 except DumpRecoveryFailed as dump_exc:
                     reason = str(dump_exc)
@@ -445,6 +448,7 @@ class DeviceThread:
                 self.elements,
                 self.settings,
                 logger=logger,
+                slot_index=self.slot_index,
             )
         except BootStepFailed as exc:
             self._pause_boot_failure(logger, exc)
@@ -465,7 +469,8 @@ class DeviceThread:
 
         try:
             run_post_dynamic(
-                self.driver, self.elements, self.settings, logger=logger
+                self.driver, self.elements, self.settings, logger=logger,
+                slot_index=self.slot_index,
             )
         except BootStepFailed as exc:
             self._pause_boot_failure(logger, exc)
@@ -516,16 +521,29 @@ class DeviceThread:
         except Exception:
             logger.exception("设备 %s: 记录发动态时间失败", self.serial)
 
+    def _on_abnormal_mode(self) -> str:
+        ac_cfg = (self.settings or {}).get("account_check") or {}
+        return str(ac_cfg.get("on_abnormal") or "continue").lower()
+
+    def _maybe_pause_after_swap_success(
+        self, logger: logging.Logger, *, reason: str
+    ) -> None:
+        """换号全流程成功后：仅 on_abnormal=pause 时暂停。"""
+        if self._on_abnormal_mode() == "pause":
+            with self._lock:
+                self._paused_by_account_check = True
+            self.pause(reason=reason)
+
     def _continue_account_after_swap(self, filename: str, logger: logging.Logger) -> bool:
         """换号推送并刷新后：第一个文件号 → 一键切换 → 打开陌陌 → 发动态。"""
         from core.account_boot import BootResult, BootStepFailed, run_account_boot_from_phone
         from core.post_dynamic import run_post_dynamic
-        from core.weiba_refresh import back_to_weiba_phone_and_refresh
+        from core.weiba_refresh import ensure_weiba_phone_and_refresh
 
         if self.driver is None:
             return False
         try:
-            refreshed = back_to_weiba_phone_and_refresh(
+            refreshed = ensure_weiba_phone_and_refresh(
                 self.driver,
                 self.elements,
                 self.settings,
@@ -533,8 +551,11 @@ class DeviceThread:
             )
             if not refreshed:
                 logger.warning("设备 %s: 换号后刷新微霸失败", self.serial)
+                self.pause(reason="换号失败: 未能回到微霸并刷新")
+                return False
         except Exception:
             logger.exception("设备 %s: 换号后刷新微霸异常", self.serial)
+            self.pause(reason="换号失败: 回微霸异常")
             return False
 
         try:
@@ -543,6 +564,7 @@ class DeviceThread:
                 self.elements,
                 self.settings,
                 logger=logger,
+                slot_index=self.slot_index,
             )
         except BootStepFailed as exc:
             self._pause_boot_failure(logger, exc)
@@ -564,7 +586,8 @@ class DeviceThread:
         self._begin_new_account_session(filename, logger)
         try:
             run_post_dynamic(
-                self.driver, self.elements, self.settings, logger=logger
+                self.driver, self.elements, self.settings, logger=logger,
+                slot_index=self.slot_index,
             )
         except BootStepFailed as exc:
             self._pause_boot_failure(logger, exc)
@@ -574,6 +597,77 @@ class DeviceThread:
             self._pause_boot_failure(logger, BootStepFailed("post_dynamic", "换号后发动态异常"))
             return False
         self._on_post_dynamic_done(logger)
+        return True
+
+    def _swap_and_continue_account(
+        self, logger: logging.Logger, *, reason: str = ""
+    ) -> bool:
+        """推送新号文件并完成微霸上号 + 发动态；失败暂停，成功按 on_abnormal 决定是否暂停。"""
+        from ops.account_swap import swap_account_file_for_device
+        from ops.agent_init import agent_serial_to_adb_serial
+
+        ac_cfg = (self.settings or {}).get("account_check") or {}
+        local_dir = str(ac_cfg.get("local_dir") or "").strip()
+        remote_dir = str(ac_cfg.get("remote_dir") or "/sdcard/Download").strip()
+        tag = reason or "换号"
+
+        if not local_dir:
+            msg = "换号失败: 未配置 account_check.local_dir"
+            logger.warning("设备 %s: %s", self.serial, msg)
+            with self._lock:
+                self._account_message = msg
+            self.pause(reason=msg)
+            return False
+
+        adb_serial = agent_serial_to_adb_serial(self.serial)
+        result = swap_account_file_for_device(
+            adb_serial,
+            local_dir,
+            remote_dir,
+            agent_serial=self.serial,
+        )
+        if not result.get("ok"):
+            err = str(result.get("error") or "换号失败")
+            logger.error("设备 %s: %s — %s", self.serial, tag, err)
+            with self._lock:
+                self._account_message = err
+            self.pause(reason=f"换号失败: {err}")
+            return False
+
+        filename = str(result.get("file") or "")
+        logger.info(
+            "设备 %s: %s 换号成功 %s → %s",
+            self.serial,
+            tag,
+            filename,
+            result.get("remote"),
+        )
+
+        continued = False
+        if self.driver is not None:
+            try:
+                continued = self._continue_account_after_swap(filename, logger)
+            except DumpRecoveryFailed:
+                raise
+            except Exception:
+                logger.exception("设备 %s: 换号后衔接新号流程异常", self.serial)
+                self.pause(reason="换号失败: 衔接新号异常")
+                return False
+
+        if not continued:
+            return False
+
+        with self._lock:
+            self._account_message = f"已换号: {filename}，已衔接新号上号"
+            self._account_status = "ok"
+        self._maybe_pause_after_swap_success(
+            logger, reason=f"{tag}，已换号，请处理后恢复"
+        )
+        if self._on_status:
+            try:
+                self._on_status(self.snapshot())
+            except Exception:
+                pass
         return True
 
     def _maybe_check_low_greet(self, logger: logging.Logger) -> None:
@@ -590,16 +684,14 @@ class DeviceThread:
             logger=logger,
         )
 
-    def _maybe_idle_wait_after_invite(self, logger: logging.Logger) -> None:
-        """已邀请过好友且本轮无新招呼时，进入空闲等待与违规检测。"""
-        if self.session_round is None or self.storage is None:
-            return
-        if not self.storage.get_device_state_flag("has_ever_invited", False):
+    def _maybe_post_dynamic_no_greet_swap(self, logger: logging.Logger) -> None:
+        """发动态后连续 N 分钟无招呼：直接换号（不检测）。"""
+        if self.session_round is None or self.storage is None or self.driver is None:
             return
         if self.session_round.last_approved_count > 0:
             return
 
-        from core.greet_idle import wait_after_invite_no_greet
+        from core.post_dynamic_idle import wait_after_post_dynamic_no_greet
 
         def _should_stop() -> bool:
             return self._stop_evt.is_set()
@@ -608,116 +700,35 @@ class DeviceThread:
             with self._lock:
                 return not self._pause_evt.is_set()
 
-        def _on_status(result) -> None:
-            from core.account_check import AccountCheckResult
+        def _on_swap(reason: str) -> bool:
+            return self._swap_and_continue_account(logger, reason=reason)
 
-            with self._lock:
-                self._account_status = result.value
-                self._last_check_at = time.time()
-                if result is AccountCheckResult.ABNORMAL:
-                    self._account_message = "账号违规（空闲检测）"
-                elif result is AccountCheckResult.UNKNOWN:
-                    self._account_message = "状态未知"
-                elif result is AccountCheckResult.ERROR:
-                    self._account_message = "检测失败"
-                else:
-                    self._account_message = ""
-            if self._on_status:
-                try:
-                    self._on_status(self.snapshot())
-                except Exception:
-                    pass
-
-        def _on_swap() -> bool:
-            ok = self._swap_account_file(logger)
-            ac_cfg = (self.settings or {}).get("account_check") or {}
-            on_abnormal = str(ac_cfg.get("on_abnormal") or "pause").lower()
-            if ok and on_abnormal == "pause":
-                with self._lock:
-                    self._paused_by_account_check = True
-                self.pause(reason="账号违规已换号，请处理后恢复")
-            return ok
-
-        wait_after_invite_no_greet(
+        wait_after_post_dynamic_no_greet(
             greeter=self.session_round.greeter,
-            driver=self.driver,
-            elements=self.elements,
-            settings=self.settings,
             storage=self.storage,
-            serial=self.serial,
+            settings=self.settings,
             should_stop=_should_stop,
             should_pause=_should_pause,
-            on_account_status=_on_status,
             on_swap_account=_on_swap,
             logger=logger,
         )
-
-    def _swap_account_file(self, logger: logging.Logger) -> bool:
-        """违规换号：清空模拟器目录并推送未使用过的本地文件。"""
-        from ops.account_swap import swap_account_file_for_device
-        from ops.agent_init import agent_serial_to_adb_serial
-
-        ac_cfg = (self.settings or {}).get("account_check") or {}
-        local_dir = str(ac_cfg.get("local_dir") or "").strip()
-        remote_dir = str(ac_cfg.get("remote_dir") or "/sdcard/Download").strip()
-        if not local_dir:
-            logger.warning("设备 %s: 未配置 account_check.local_dir，跳过换号", self.serial)
-            return False
-
-        adb_serial = agent_serial_to_adb_serial(self.serial)
-        result = swap_account_file_for_device(
-            adb_serial,
-            local_dir,
-            remote_dir,
-            agent_serial=self.serial,
-        )
-        if result.get("ok"):
-            filename = str(result.get("file") or "")
-            logger.info(
-                "设备 %s: 换号成功 %s → %s",
-                self.serial,
-                filename,
-                result.get("remote"),
-            )
-            continued = False
-            if self.driver is not None:
-                try:
-                    continued = self._continue_account_after_swap(filename, logger)
-                except Exception:
-                    logger.exception("设备 %s: 换号后衔接新号流程异常", self.serial)
-            with self._lock:
-                msg = f"已换号: {filename}"
-                if continued:
-                    msg += "，已衔接新号上号"
-                self._account_message = msg
-            return True
-
-        logger.error(
-            "设备 %s: 换号失败 — %s",
-            self.serial,
-            result.get("error"),
-        )
-        with self._lock:
-            self._account_message = str(result.get("error") or "换号失败")
-        return False
 
     def _do_account_check(self, logger: logging.Logger) -> None:
         """跑一次账号检测，处理结果。
 
         on_abnormal 策略 (来自 settings.account_check.on_abnormal):
-          - "pause"     → 异常时自动暂停设备，标记 paused_by_account_check
-          - "mark_only" → 仅打标，业务继续
-        其它结果（ok/unknown/error）：仅写入状态字段，不影响业务。
+          - "continue"  → 异常时换号并继续（成功不暂停）
+          - "pause"     → 异常换号成功后仍暂停
+          - "mark_only" → 仅打标，不触发换号
         """
         from core.account_check import run_account_check, AccountCheckResult
-        from core.account_boot import BootStepFailed
 
         if self.driver is None:
             return
 
         ac_cfg = (self.settings or {}).get("account_check") or {}
         timeout = float(ac_cfg.get("detect_timeout_sec") or 8.0)
-        on_abnormal = str(ac_cfg.get("on_abnormal") or "pause").lower()
+        on_abnormal = self._on_abnormal_mode()
 
         logger.info("设备 %s: 开始账号检测", self.serial)
         try:
@@ -731,7 +742,6 @@ class DeviceThread:
             logger.exception("设备 %s: run_account_check 抛异常", self.serial)
             result = AccountCheckResult.ERROR
 
-        # 写状态
         with self._lock:
             self._account_status = result.value
             self._last_check_at = time.time()
@@ -744,45 +754,13 @@ class DeviceThread:
             else:
                 self._account_message = ""
 
-        # 异常处理策略：换号成功则走微霸内上号；换号未执行时 fallback 完整上号
-        if result is AccountCheckResult.ABNORMAL:
-            swapped = self._swap_account_file(logger)
-            if not swapped:
-                boot_cfg = (self.settings or {}).get("account_boot") or {}
-                if boot_cfg.get("enabled", True):
-                    logger.info("设备 %s: 账号异常且未换号，执行完整自动上号", self.serial)
-                    try:
-                        self._do_account_boot(logger)
-                    except BootStepFailed:
-                        pass
-                    except DumpRecoveryFailed:
-                        raise
-                    except Exception:
-                        logger.exception("设备 %s: 异常后自动上号失败", self.serial)
-            if on_abnormal == "pause":
-                with self._lock:
-                    boot_already_paused = (
-                        self._state == "paused"
-                        and self._error
-                        and "上号失败" in self._error
-                    )
-                if boot_already_paused:
-                    logger.warning(
-                        "设备 %s: 账号异常，上号已失败并暂停，保留上号失败原因",
-                        self.serial,
-                    )
-                else:
-                    logger.warning("设备 %s: 账号异常 → 自动暂停", self.serial)
-                    with self._lock:
-                        self._paused_by_account_check = True
-                    self.pause(reason="账号违规" + ("，已换号" if swapped else ""))
-        else:
-            # 不暂停时手动触发一次回调（pause/resume 内部会触发）
-            if self._on_status:
-                try:
-                    self._on_status(self.snapshot())
-                except Exception:
-                    pass
+        if result is AccountCheckResult.ABNORMAL and on_abnormal != "mark_only":
+            self._swap_and_continue_account(logger, reason="账号异常")
+        elif self._on_status:
+            try:
+                self._on_status(self.snapshot())
+            except Exception:
+                pass
 
 
 class DeviceManager:
@@ -801,12 +779,13 @@ class DeviceManager:
         self._lock = threading.RLock()
         self._threads: Dict[str, DeviceThread] = {}
 
-        for dev in device_list:
+        for idx, dev in enumerate(device_list):
             serial = dev["serial"]
             name = dev.get("name", serial)
             self._threads[serial] = DeviceThread(
                 serial, name, settings, elements,
                 on_status_change=on_status_change,
+                slot_index=idx,
             )
 
         # ---------- 账号检测调度 ----------
@@ -817,7 +796,7 @@ class DeviceManager:
             self._ac_interval_min: int = max(1, int(ac_cfg.get("interval_minutes", 30)))
         except Exception:
             self._ac_interval_min = 30
-        self._ac_on_abnormal: str = str(ac_cfg.get("on_abnormal") or "pause").lower()
+        self._ac_on_abnormal: str = str(ac_cfg.get("on_abnormal") or "continue").lower()
         # 调度器：daemon 线程，每分钟检查一次是否到点
         self._ac_scheduler_evt = threading.Event()
         self._ac_scheduler_thread: Optional[threading.Thread] = None
@@ -884,9 +863,11 @@ class DeviceManager:
         with self._lock:
             if serial in self._threads:
                 return None
+            slot_index = len(self._threads)
             dt = DeviceThread(
                 serial, name, self.settings, self.elements,
                 on_status_change=self._on_status,
+                slot_index=slot_index,
             )
             self._threads[serial] = dt
             return dt
@@ -956,6 +937,7 @@ class DeviceManager:
         interval_minutes: Optional[int] = None,
         on_abnormal: Optional[str] = None,
         idle_after_invite_minutes: Optional[float] = None,
+        post_dynamic_no_greet_swap_minutes: Optional[float] = None,
         local_dir: Optional[str] = None,
         remote_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -971,7 +953,7 @@ class DeviceManager:
                     pass
             if on_abnormal is not None:
                 v = str(on_abnormal).lower()
-                if v in ("pause", "mark_only"):
+                if v in ("pause", "mark_only", "continue"):
                     self._ac_on_abnormal = v
             # 同步到 settings dict（让每个 DeviceThread 都能拿到 detect_timeout / on_abnormal）
             cfg = self.settings.setdefault("account_check", {}) if isinstance(self.settings, dict) else None
@@ -983,6 +965,13 @@ class DeviceManager:
                     try:
                         cfg["idle_after_invite_minutes"] = max(
                             1.0, float(idle_after_invite_minutes)
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                if post_dynamic_no_greet_swap_minutes is not None:
+                    try:
+                        cfg["post_dynamic_no_greet_swap_minutes"] = max(
+                            0.0, float(post_dynamic_no_greet_swap_minutes)
                         )
                     except (TypeError, ValueError):
                         pass
@@ -1006,6 +995,9 @@ class DeviceManager:
                 "on_abnormal": self._ac_on_abnormal,
                 "idle_after_invite_minutes": float(
                     ac.get("idle_after_invite_minutes", 5)
+                ),
+                "post_dynamic_no_greet_swap_minutes": float(
+                    ac.get("post_dynamic_no_greet_swap_minutes", 5)
                 ),
                 "local_dir": str(ac.get("local_dir") or ""),
                 "remote_dir": str(ac.get("remote_dir") or "/sdcard/Download"),

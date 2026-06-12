@@ -50,7 +50,10 @@ class LowGreetWatchTests(unittest.TestCase):
             ok = watch.maybe_report_low_greet(
                 greeter=greeter,
                 storage=storage,
-                settings={"approve_greeting": {"first_batch_min_count": 3}},
+                settings={
+                    "approve_greeting": {"first_batch_min_count": 3},
+                    "account_check": {"post_dynamic_no_greet_swap_minutes": 0},
+                },
                 serial="dev1",
                 device_name="phone",
             )
@@ -72,7 +75,10 @@ class LowGreetWatchTests(unittest.TestCase):
             ok = watch.maybe_report_low_greet(
                 greeter=greeter,
                 storage=storage,
-                settings={"approve_greeting": {"first_batch_min_count": 3}},
+                settings={
+                    "approve_greeting": {"first_batch_min_count": 3},
+                    "account_check": {"post_dynamic_no_greet_swap_minutes": 0},
+                },
                 serial="dev1",
             )
         self.assertFalse(ok)

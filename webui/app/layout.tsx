@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "动态群 - 群控控制台",
-  description: "陌陌群控：招呼通过 → 拉群 → 拉黑",
+  description: "陌陌群控：招呼通过 → 拉群",
 };
 
 export default function RootLayout({

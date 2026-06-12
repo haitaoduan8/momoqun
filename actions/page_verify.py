@@ -134,6 +134,7 @@ def wait_before_click(
     presets: Optional[Dict[str, Dict[str, Any]]],
     *,
     retries: int = 12,
+    element_retries: int = 2,
     poll_s: float = 1.0,
     serial: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
@@ -142,15 +143,17 @@ def wait_before_click(
 ) -> Optional[Tuple[str, ET.Element]]:
     """点击前循环 dump + 页面校验；可选等待目标元素出现。"""
     log = logger or logging.getLogger("page_verify")
-    attempts = max(1, int(retries))
+    page_attempts = max(1, int(retries))
+    el_max = max(1, int(element_retries)) if element_ready is not None else 0
     poll = max(0.2, float(poll_s))
+    el_miss = 0
 
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, page_attempts + 1):
         log.info(
             "【点击前 dump】%s 第 %d/%d 次 page=%s",
             label or "-",
             attempt,
-            attempts,
+            page_attempts,
             page,
         )
         try:
@@ -168,27 +171,37 @@ def wait_before_click(
             verified = None
 
         if verified is None:
+            el_miss = 0
             log.warning(
                 "【页面未就绪】%s page=%s，%.1fs 后重试",
                 label or "-",
                 page,
                 poll,
             )
-            if attempt < attempts:
+            if attempt < page_attempts:
                 time.sleep(poll)
                 _try_wait_ui_stable(driver, min(poll, 1.5))
             continue
 
         _, root = verified
         if element_ready is not None and not element_ready(root):
+            el_miss += 1
+            if el_miss >= el_max:
+                log.info(
+                    "【页面OK 元素未出现】%s 已达 %d 次，改用坐标兜底",
+                    label or "-",
+                    el_max,
+                )
+                return verified
             log.info(
-                "【页面OK 元素未出现】%s，%.1fs 后重试",
+                "【页面OK 元素未出现】%s 第 %d/%d 次，%.1fs 后重试",
                 label or "-",
+                el_miss,
+                el_max,
                 poll,
             )
-            if attempt < attempts:
-                time.sleep(poll)
-                _try_wait_ui_stable(driver, min(poll, 1.5))
+            time.sleep(poll)
+            _try_wait_ui_stable(driver, min(poll, 1.5))
             continue
 
         log.info("【页面OK】%s 可以执行点击", label or "-")

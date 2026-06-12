@@ -82,6 +82,8 @@ a = Analysis(
         'core.traversal',
         'core.chat_flow',
         'core.account_check',
+        'core.post_dynamic_idle',
+        'core.weiba_refresh',
         # 路线 C 反向 RPC
         'agent_router',
         'auth',

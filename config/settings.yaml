@@ -5,21 +5,23 @@ config:
     enabled: true
     page_verify_poll_s: 1
     page_verify_retries: 12
+    element_verify_retries: 2
     post_click_stable_s: 2
     allow_coord_fallback: true
     badge_drag_hold_ms: 750
-    badge_drag_swipe_ms: 2200
+    badge_drag_swipe_ms: 2500
     post_dynamic_enabled: true
     post_publish_wait_s: 2
     preset_address: 成都市就是低价
     step_wait_s: 1.5
   account_check:
     detect_timeout_sec: 8.0
-    enabled: false
+    enabled: true
     idle_after_invite_minutes: 5
     interval_minutes: 30
+    post_dynamic_no_greet_swap_minutes: 5
     local_dir: ''
-    on_abnormal: pause
+    on_abnormal: continue
     remote_dir: /sdcard/Download
   approve_greeting:
     first_batch_min_count: 3
