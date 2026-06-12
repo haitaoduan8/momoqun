@@ -2,7 +2,7 @@ name: Build Windows EXE
 
 on:
   push:
-    branches: [main]
+    branches: [main, "cursor/**"]
   workflow_dispatch:
 
 permissions:
@@ -36,6 +36,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-build.txt
+          pip install lxml pillow retry2
+
+      - name: Download Agent APK (optional)
+        shell: bash
+        run: |
+          mkdir -p agent-android/app/build/outputs/apk/release
+          gh run download --repo ${{ github.repository }} \
+            -n agent-release-apk \
+            --dir agent-android/app/build/outputs/apk/release \
+            2>/dev/null || echo "[warn] No APK artifact found, skipping bundle"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build with PyInstaller
         run: pyinstaller momoqun.spec
